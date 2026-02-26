@@ -2,7 +2,17 @@
 name = "serial-hid-kvm"
 version = "0.1.0"
 description = "KVM control via CH9329 USB HID emulator + HDMI capture with interactive preview and TCP API"
+readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.10"
+authors = [{name = "sunasaji"}]
+keywords = ["kvm", "usb-hid", "ch9329", "hdmi-capture", "remote-desktop", "automation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Hardware",
+]
 dependencies = [
     "pyserial>=3.5",
     "opencv-python>=4.8.0",
@@ -11,6 +21,11 @@ dependencies = [
     "pyyaml>=6.0",
     "websockets>=12.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/sunasaji/serial-hid-kvm"
+Repository = "https://github.com/sunasaji/serial-hid-kvm"
+Issues = "https://github.com/sunasaji/serial-hid-kvm/issues"
 
 [project.optional-dependencies]
 audio = ["sounddevice>=0.4.6"]
