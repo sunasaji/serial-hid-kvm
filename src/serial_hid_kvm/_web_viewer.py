@@ -114,6 +114,39 @@ _JS_MOD_BITS: dict[str, int] = {
 
 
 # ---------------------------------------------------------------------------
+# PWA assets (manifest, service worker, icon)
+# ---------------------------------------------------------------------------
+
+_MANIFEST_JSON = json.dumps({
+    "name": "serial-hid-kvm",
+    "short_name": "KVM",
+    "description": "Remote KVM via CH9329 USB HID + HDMI capture",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#1a1a2e",
+    "theme_color": "#16213e",
+    "icons": [
+        {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml"},
+    ],
+}, separators=(",", ":"))
+
+# Minimal service worker — just enough for PWA installability, no caching.
+_SW_JS = """\
+self.addEventListener("fetch", (e) => e.respondWith(fetch(e.request)));
+"""
+
+# Simple SVG icon: monitor with "KVM" label
+_ICON_SVG = """\
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<rect width="512" height="512" rx="64" fill="#16213e"/>
+<rect x="56" y="80" width="400" height="260" rx="16" fill="#0a0a1a" stroke="#0f3460" stroke-width="12"/>
+<rect x="200" y="360" width="112" height="24" rx="4" fill="#0f3460"/>
+<rect x="160" y="392" width="192" height="16" rx="8" fill="#0f3460"/>
+<text x="256" y="240" text-anchor="middle" font-family="system-ui,sans-serif" font-weight="bold" font-size="96" fill="#e0e0e0">KVM</text>
+</svg>
+"""
+
+# ---------------------------------------------------------------------------
 # Embedded HTML/JS viewer
 # ---------------------------------------------------------------------------
 
@@ -122,6 +155,9 @@ _VIEWER_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#16213e">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
 <title>serial-hid-kvm</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -436,6 +472,9 @@ document.getElementById("btnAudio").addEventListener("click", async () => {
   canvas.focus();
 });
 
+// --- PWA ---
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
+
 // --- Start ---
 canvas.focus();
 connect();
@@ -485,13 +524,36 @@ class WebViewerServer:
             await self._server.wait_closed()
             self._server = None
 
+    # Pre-encoded PWA assets (immutable after module load)
+    _pwa_routes: dict[str, tuple[str, bytes]] = {
+        "/manifest.json": ("application/manifest+json",
+                           _MANIFEST_JSON.encode()),
+        "/sw.js": ("application/javascript; charset=utf-8",
+                   _SW_JS.encode()),
+        "/icon.svg": ("image/svg+xml", _ICON_SVG.encode()),
+    }
+
     async def _process_http(self, connection, request):
-        """Serve the HTML viewer for non-WebSocket HTTP requests."""
+        """Serve the HTML viewer and PWA assets for HTTP requests."""
         if request.path == "/ws":
             # Stash User-Agent for logging when _handle_client runs
             ua = request.headers.get("User-Agent", "")
             connection._kvm_user_agent = ua
             return None  # let WebSocket handshake proceed
+
+        pwa = self._pwa_routes.get(request.path)
+        if pwa is not None:
+            content_type, body = pwa
+            return Response(
+                200, "OK",
+                websockets.Headers({
+                    "Content-Type": content_type,
+                    "Content-Length": str(len(body)),
+                    "Cache-Control": "no-cache",
+                }),
+                body,
+            )
+
         html_bytes = _VIEWER_HTML.encode("utf-8")
         return Response(
             200, "OK",
