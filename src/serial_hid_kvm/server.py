@@ -829,8 +829,11 @@ def _run_headless(hardware: KvmHardware, config: Config,
         for task in asyncio.all_tasks(loop):
             task.cancel()
         loop.run_until_complete(loop.shutdown_asyncgens())
-        if audio_capture is not None:
-            audio_capture.stop()
+        try:
+            if audio_capture is not None:
+                audio_capture.stop()
+        except Exception:
+            pass
         hardware.close()
         loop.close()
         logger.info("KVM server stopped")
@@ -883,8 +886,11 @@ def _run_with_preview(hardware: KvmHardware, config: Config,
     except KeyboardInterrupt:
         pass
     finally:
-        if audio_playback is not None:
-            audio_playback.stop()
+        try:
+            if audio_playback is not None:
+                audio_playback.stop()
+        except Exception:
+            pass
         if t is not None:
             async def _shutdown():
                 if web is not None:
@@ -896,8 +902,11 @@ def _run_with_preview(hardware: KvmHardware, config: Config,
                 loop.stop()
             asyncio.run_coroutine_threadsafe(_shutdown(), loop)
             t.join(timeout=3)
-        if audio_capture is not None:
-            audio_capture.stop()
+        try:
+            if audio_capture is not None:
+                audio_capture.stop()
+        except Exception:
+            pass
         hardware.close()
         logger.info("KVM server stopped")
 
