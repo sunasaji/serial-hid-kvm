@@ -171,6 +171,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:#1a1a2e;font-family:
 #container{display:flex;align-items:center;justify-content:center;width:100%;height:calc(100% - 36px);background:#0a0a1a;overflow:auto}
 canvas{display:block;image-rendering:auto;cursor:none}
 #toolbar button.active{background:#2a6a2a;border-color:#3a8a3a}
+body.fs-autohide #toolbar{position:fixed;top:0;z-index:10;transform:translateY(-100%);transition:transform .3s ease;pointer-events:none;border-radius:0 0 8px 8px;box-shadow:0 2px 12px rgba(0,0,0,.5);cursor:grab}
+body.fs-autohide #toolbar.visible{transform:translateY(0);pointer-events:auto}
+body.fs-autohide #toolbar.dragging{cursor:grabbing;transition:none}
+body.fs-autohide #container{height:100%}
 </style>
 </head>
 <body>
@@ -193,6 +197,7 @@ const ctx = canvas.getContext("2d");
 const statusEl = document.getElementById("status");
 const fpsEl = document.getElementById("fps");
 const container = document.getElementById("container");
+const toolbar = document.getElementById("toolbar");
 
 let ws = null;
 let frameCount = 0;
@@ -390,11 +395,67 @@ document.getElementById("btnFs").addEventListener("click", () => {
   else document.exitFullscreen();
   canvas.focus();
 });
-// Keyboard Lock API — capture system keys (Alt+Tab, Win, etc.) in fullscreen
+// Fullscreen: keyboard lock + toolbar auto-hide
+let _tbLeft = 0;
+let _tbWidth = 0;
+function _tbCenter() {
+  _tbWidth = toolbar.offsetWidth;
+  _tbLeft = (window.innerWidth - _tbWidth) / 2;
+  toolbar.style.left = _tbLeft + "px";
+}
 document.addEventListener("fullscreenchange", () => {
-  if (document.fullscreenElement && navigator.keyboard && navigator.keyboard.lock) {
-    navigator.keyboard.lock(["AltLeft","AltRight","Tab","MetaLeft","MetaRight","Escape"]).catch(() => {});
+  const isFs = !!document.fullscreenElement;
+  document.body.classList.toggle("fs-autohide", isFs);
+  if (isFs) {
+    if (navigator.keyboard && navigator.keyboard.lock)
+      navigator.keyboard.lock(["AltLeft","AltRight","Tab","MetaLeft","MetaRight","Escape"]).catch(() => {});
+    requestAnimationFrame(_tbCenter);
+  } else {
+    toolbar.classList.remove("visible");
+    toolbar.style.left = "";
   }
+  updateCanvasSize();
+});
+window.addEventListener("resize", () => { if (document.fullscreenElement) _tbCenter(); });
+
+// Auto-show/hide toolbar in fullscreen when mouse nears center-top
+let _tbTimer = null;
+function _tbShow() { toolbar.classList.add("visible"); clearTimeout(_tbTimer); }
+function _tbScheduleHide() {
+  clearTimeout(_tbTimer);
+  _tbTimer = setTimeout(() => toolbar.classList.remove("visible"), 1500);
+}
+document.addEventListener("mousemove", (e) => {
+  if (!document.body.classList.contains("fs-autohide")) return;
+  if (_tbDragging) return;
+  const pad = 80;
+  const inX = e.clientX >= _tbLeft - pad && e.clientX <= _tbLeft + _tbWidth + pad;
+  if (inX && e.clientY < 50) _tbShow();
+  else if (toolbar.classList.contains("visible")) _tbScheduleHide();
+});
+toolbar.addEventListener("mouseenter", () => { if (document.body.classList.contains("fs-autohide")) _tbShow(); });
+toolbar.addEventListener("mouseleave", () => { if (document.body.classList.contains("fs-autohide") && !_tbDragging) _tbScheduleHide(); });
+
+// Drag toolbar horizontally
+let _tbDragging = false, _tbDragX0 = 0, _tbDragL0 = 0;
+toolbar.addEventListener("mousedown", (e) => {
+  if (!document.body.classList.contains("fs-autohide")) return;
+  if (e.target.tagName === "BUTTON") return;
+  _tbDragging = true;
+  _tbDragX0 = e.clientX;
+  _tbDragL0 = _tbLeft;
+  toolbar.classList.add("dragging");
+  e.preventDefault();
+});
+document.addEventListener("mousemove", (e) => {
+  if (!_tbDragging) return;
+  _tbLeft = Math.max(0, Math.min(window.innerWidth - _tbWidth, _tbDragL0 + e.clientX - _tbDragX0));
+  toolbar.style.left = _tbLeft + "px";
+});
+document.addEventListener("mouseup", () => {
+  if (!_tbDragging) return;
+  _tbDragging = false;
+  toolbar.classList.remove("dragging");
 });
 
 // --- Audio playback ---
