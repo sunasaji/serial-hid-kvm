@@ -12,7 +12,7 @@ Usage:
     serial-hid-kvm --headless --web         # web viewer only
     serial-hid-kvm --headless --api --web   # API + web viewer
     serial-hid-kvm --debug-keys             # show keycode debug output
-    serial-hid-kvm list-devices             # list capture devices and exit
+    serial-hid-kvm list-devices             # list devices with auto-detect markers
     serial-hid-kvm --config my.yaml         # use config file
 """
 
@@ -406,7 +406,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # Subcommands
     sub = parser.add_subparsers(dest="command")
-    sub.add_parser("list-devices", help="List capture devices and exit")
+    sub.add_parser("list-devices", help="List devices with auto-detect markers and exit")
 
     # Config file
     parser.add_argument("-c", "--config", metavar="FILE",
@@ -454,8 +454,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # Audio (for web viewer)
     parser.add_argument("--audio-device", type=str, metavar="DEV",
-                        help="Audio input device name or index for web viewer"
-                             " (requires: pip install serial-hid-kvm[audio])")
+                        help="Audio input device name or index"
+                             " (auto-detected from capture device VID:PID;"
+                             " requires: pip install serial-hid-kvm[audio])")
 
     # Web viewer
     parser.add_argument("--web", action="store_true",
@@ -670,12 +671,21 @@ def _cmd_list_devices():
 
     print("\nVideo capture devices:")
     devices = list_capture_devices(enumerate_formats=True)
+    auto_video = None
     if not devices:
         print("  (none found)")
     else:
+        from .capture import _is_webcam_name
+        for d in devices:
+            if not _is_webcam_name(d["name"]):
+                auto_video = d
+                break
+        if auto_video is None:
+            auto_video = devices[0]
         for d in devices:
             vp = f"  [{d['vidpid']}]" if d.get("vidpid") else ""
-            print(f"  {d['device']:20s}  {d['name']}{vp}")
+            tag = "  [auto-detect target]" if d is auto_video else ""
+            print(f"  {d['device']:20s}  {d['name']}{vp}{tag}")
             if d.get("formats"):
                 print(f"    formats: {', '.join(d['formats'])}")
 
@@ -697,6 +707,10 @@ def _cmd_list_devices():
         # Build VID:PID lookup from PnP (Windows) or sysfs (Linux)
         audio_vidpid = _audio_vidpid_lookup()
 
+        # Auto-detect target: first audio input matching video device VID:PID
+        auto_audio_vidpid = auto_video.get("vidpid", "") if auto_video else ""
+        auto_audio_tagged = False
+
         found = False
         for i, d in enumerate(devs):
             if d["max_input_channels"] > 0 and d["hostapi"] == api_idx:
@@ -705,7 +719,11 @@ def _cmd_list_devices():
                 name = d["name"]
                 vp = audio_vidpid.get(name, "")
                 vp_str = f"  [{vp}]" if vp else ""
-                print(f"  {i:<4d}  {name}  [{sr} Hz, {ch} ch]{vp_str}")
+                tag = ""
+                if not auto_audio_tagged and auto_audio_vidpid and vp == auto_audio_vidpid:
+                    tag = "  [auto-detect target]"
+                    auto_audio_tagged = True
+                print(f"  {i:<4d}  {name}  [{sr} Hz, {ch} ch]{vp_str}{tag}")
                 found = True
         if not found:
             print("  (none found)")
@@ -713,6 +731,63 @@ def _cmd_list_devices():
         print("  (sounddevice not installed — pip install serial-hid-kvm[audio])")
     except Exception as e:
         print(f"  (error: {e})")
+
+
+# ---------------------------------------------------------------------------
+# Audio auto-detection from video device VID:PID
+# ---------------------------------------------------------------------------
+
+def _auto_detect_audio(config):
+    """Auto-detect audio input device matching the capture device's VID:PID.
+
+    If the capture device has a known VID:PID and an audio input device
+    shares the same VID:PID, automatically select it.
+    """
+    try:
+        import sounddevice as sd
+    except ImportError:
+        return
+
+    # Find the capture device's VID:PID
+    from .capture import _is_webcam_name
+    devices = list_capture_devices()
+    vidpid = ""
+    if config.capture_device is not None:
+        cap_str = str(config.capture_device)
+        for d in devices:
+            if d["device"] == cap_str:
+                vidpid = d.get("vidpid", "")
+                break
+    else:
+        # Same logic as detect_capture_device()
+        for d in devices:
+            if not _is_webcam_name(d["name"]):
+                vidpid = d.get("vidpid", "")
+                break
+        if not vidpid and devices:
+            vidpid = devices[0].get("vidpid", "")
+    if not vidpid:
+        return
+
+    # Find matching audio input device
+    audio_vidpid = _audio_vidpid_lookup()
+    devs = sd.query_devices()
+    hostapis = sd.query_hostapis()
+    api_idx = None
+    for idx, api in enumerate(hostapis):
+        if "WASAPI" in api["name"]:
+            api_idx = idx
+            break
+    if api_idx is None:
+        api_idx = sd.default.hostapi
+
+    for i, d in enumerate(devs):
+        if d["max_input_channels"] > 0 and d["hostapi"] == api_idx:
+            vp = audio_vidpid.get(d["name"], "")
+            if vp == vidpid:
+                config.audio_device = str(i)
+                logger.info(f"Auto-detected audio device: {i} ({d['name']}) [{vp}]")
+                return
 
 
 # ---------------------------------------------------------------------------
@@ -738,22 +813,24 @@ def main():
 
     # Apply keyboard layout
     source = set_layout(config.target_layout, layouts_dir=config.layouts_dir)
-    logger.info(f"Keyboard layout: {config.target_layout} ({source})")
+    logger.info(f"Target layout: {config.target_layout} ({source})")
 
-    # Resolve host layout for preview reverse-lookup
+    # Resolve host layout for preview reverse-lookup (Linux/pynput only;
+    # Windows uses Win32 scan codes and does not need reverse-lookup)
     host_char_map: dict[str, tuple[int, int]] | None = None
     wayland_hybrid = False
-    host_layout = config.host_layout
-    if host_layout == "auto":
-        host_layout, wayland_hybrid = _detect_host_layout()
-    if host_layout != "none" and host_layout != config.target_layout:
-        host_char_map = build_char_map(host_layout, layouts_dir=config.layouts_dir)
-        extra = ", wayland-hybrid" if wayland_hybrid else ""
-        logger.info(f"Host layout: {host_layout} (reverse-lookup enabled{extra})")
-    elif host_layout == "none":
-        logger.info("Host layout: disabled (--host-layout none)")
-    else:
-        logger.info(f"Host layout: {host_layout} (same as target, no reverse-lookup)")
+    if platform.system() == "Linux":
+        host_layout = config.host_layout
+        if host_layout == "auto":
+            host_layout, wayland_hybrid = _detect_host_layout()
+        if host_layout != "none" and host_layout != config.target_layout:
+            host_char_map = build_char_map(host_layout, layouts_dir=config.layouts_dir)
+            extra = ", wayland-hybrid" if wayland_hybrid else ""
+            logger.info(f"Host layout: {host_layout} (reverse-lookup enabled{extra})")
+        elif host_layout == "none":
+            logger.info("Host layout: disabled (--host-layout none)")
+        else:
+            logger.info(f"Host layout: {host_layout} (same as target, no reverse-lookup)")
 
     if config.headless and not config.api_enabled and not config.web_enabled:
         logger.error("--headless requires at least one of --api or --web")
@@ -761,6 +838,10 @@ def main():
 
     hardware = KvmHardware(config)
     dispatcher = ApiDispatcher(hardware, config)
+
+    # Auto-detect audio device from video device VID:PID
+    if config.audio_device is None:
+        _auto_detect_audio(config)
 
     # Create shared audio capture if configured
     audio_capture = None

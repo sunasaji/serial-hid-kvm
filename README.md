@@ -31,8 +31,8 @@ flowchart LR
 - **Multiple concurrent clients** — one KVM server, many API clients (AI agents, scripts, etc.)
 - **Headless mode** — run without preview window; combine with `--api` and/or `--web`
 - **Multi-layout support** — US, JP (JIS), UK, DE, FR keyboards for API text input (some special characters like umlauts, accented characters, and £ are not yet supported in non-US/JP layouts)
-- **Audio streaming** — HDMI audio playback in preview window and web viewer via `--audio-device` (optional)
-- **Auto-detection** — finds CH340 serial adapter and HDMI capture device automatically
+- **Audio streaming** — HDMI audio playback in preview window and web viewer; auto-detected from capture device VID:PID, or specify manually with `--audio-device`
+- **Auto-detection** — finds CH340 serial adapter, HDMI capture device, and matching audio input automatically
 
 ## Use Cases
 
@@ -107,13 +107,13 @@ serial-hid-kvm --headless --api --api-host 0.0.0.0 --web --web-host 0.0.0.0
 # Custom settings
 serial-hid-kvm --headless --api --api-port 9400 --web --web-port 8080
 
-# Web viewer with audio (use list-devices to find audio device index)
-serial-hid-kvm --headless --web --audio-device 3
+# Web viewer with audio (auto-detected; override with --audio-device DEV)
+serial-hid-kvm --headless --web
 
 # Japanese keyboard layout
 serial-hid-kvm --target-layout jp106
 
-# List capture and audio devices
+# List devices (shows [auto-detect target] markers)
 serial-hid-kvm list-devices
 
 # Use config file
@@ -140,7 +140,7 @@ Settings are resolved with priority: **CLI args > environment variables > config
 serial-hid-kvm [OPTIONS] [COMMAND]
 
 Commands:
-  list-devices              List capture devices and exit
+  list-devices              List devices with auto-detect markers and exit
 
 Options:
   --headless                Run without preview window
@@ -159,8 +159,9 @@ Options:
   --web-fps FPS             Web viewer frame rate (default: 20)
   --web-quality Q           Web viewer JPEG quality 1-100 (default: 60)
 
-  --audio-device DEV        Audio input device index or name for web viewer
-                            (disabled by default; requires pip install .[audio])
+  --audio-device DEV        Audio input device index or name
+                            (auto-detected from capture device VID:PID;
+                             requires pip install .[audio])
 
   -s, --serial-port PORT    Serial port (e.g. COM3, /dev/ttyUSB0)
   --serial-baud BAUD        Serial baud rate (default: 9600)
@@ -203,7 +204,7 @@ All use the `SHKVM_` prefix:
 | `SHKVM_WEB_PORT` | `9330` | Web viewer port |
 | `SHKVM_WEB_FPS` | `20` | Web viewer frame rate |
 | `SHKVM_WEB_QUALITY` | `60` | Web viewer JPEG quality (1-100) |
-| `SHKVM_AUDIO_DEVICE` | — | Audio input device index or name (web viewer) |
+| `SHKVM_AUDIO_DEVICE` | auto-detect | Audio input device index or name |
 | `SHKVM_DEBUG_KEYS` | `0` | Enable keycode debug output (`1`/`true`) |
 | `SHKVM_SHOW_CURSOR` | `0` | Show mouse cursor on preview window (`1`/`true`) |
 | `SHKVM_LOG_FILE` | — | Also write logs to a file |
@@ -305,20 +306,21 @@ As with the preview window, the mouse cursor is hidden by default. The **Cursor*
 
 ### Audio
 
-HDMI audio can be streamed to both the preview window and the web viewer. Audio is disabled by default — specify an audio input device to enable it:
+HDMI audio can be streamed to both the preview window and the web viewer. If the `audio` extra is installed and the HDMI capture device has a matching audio input (same USB VID:PID), audio is **enabled automatically** — no `--audio-device` flag needed.
 
 ```bash
-# List available audio devices
+# Auto-detection: just run with audio extra installed
+serial-hid-kvm --headless --web
+
+# Verify which devices are auto-detected
 serial-hid-kvm list-devices
+# Video and audio devices with matching VID:PID show [auto-detect target]
 
-# Preview window with audio
-serial-hid-kvm --audio-device 3
-
-# Web viewer with audio
+# Manual override if needed
 serial-hid-kvm --headless --web --audio-device 3
 ```
 
-Requires the `audio` extra: `pip install serial-hid-kvm[audio]` (installs `sounddevice`). The audio device is typically the HDMI capture dongle's audio input. The preview window plays audio immediately; the web viewer requires clicking the **Unmute** button (browser autoplay policy).
+Requires the `audio` extra: `pip install serial-hid-kvm[audio]` (installs `sounddevice`). The preview window plays audio immediately; the web viewer requires clicking the **Unmute** button (browser autoplay policy).
 
 ## API Server
 
