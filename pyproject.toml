@@ -1,6 +1,6 @@
 [project]
 name = "serial-hid-kvm"
-version = "0.1.0"
+version = "0.2.0"
 description = "KVM control via CH9329 USB HID emulator + HDMI capture with interactive preview and TCP API"
 readme = "README.md"
 license = {text = "MIT"}
