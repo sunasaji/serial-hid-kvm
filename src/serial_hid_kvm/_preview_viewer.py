@@ -857,7 +857,7 @@ def run_preview_inprocess(hardware, config: Config,
     display_w = 0
     display_h = 0
 
-    print("KVM Preview Viewer (Interactive)")
+    print("Serial HID KVM (Interactive)")
 
     if _IS_WINDOWS:
         print("Keyboard: Win32 low-level hook (all keys captured when focused)")

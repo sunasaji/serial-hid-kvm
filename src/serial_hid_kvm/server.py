@@ -94,6 +94,7 @@ class KvmHardware:
                 preview=False,
                 width=self._config.capture_width,
                 height=self._config.capture_height,
+                fourcc=self._config.capture_fourcc,
             )
             self._capture.start_capture_thread()
         return self._capture
@@ -448,6 +449,8 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="Capture resolution width (default: 1920)")
     parser.add_argument("--capture-height", type=int, metavar="PX",
                         help="Capture resolution height (default: 1080)")
+    parser.add_argument("--capture-fourcc", type=str, metavar="CODE",
+                        help="Capture FOURCC code (default: MJPG)")
 
     # Audio (for web viewer)
     parser.add_argument("--audio-device", type=str, metavar="DEV",
@@ -464,7 +467,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--web-fps", type=int, metavar="FPS",
                         help="Web viewer frame rate (default: 20)")
     parser.add_argument("--web-quality", type=int, metavar="Q",
-                        help="Web viewer JPEG quality 1-100 (default: 60)")
+                        help="Web viewer JPEG quality 1-100 (default: 85)")
 
     # Keyboard
     parser.add_argument("--target-layout", type=str, metavar="NAME",
@@ -666,13 +669,15 @@ def _cmd_list_devices():
             print(f"  {p.device:20s}  {p.description}{vidpid}{tag}")
 
     print("\nVideo capture devices:")
-    devices = list_capture_devices()
+    devices = list_capture_devices(enumerate_formats=True)
     if not devices:
         print("  (none found)")
     else:
         for d in devices:
             vp = f"  [{d['vidpid']}]" if d.get("vidpid") else ""
             print(f"  {d['device']:20s}  {d['name']}{vp}")
+            if d.get("formats"):
+                print(f"    formats: {', '.join(d['formats'])}")
 
     print("\nAudio input devices:")
     try:

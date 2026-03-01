@@ -34,6 +34,7 @@ class Config:
         self.capture_device: str | None = None
         self.capture_width: int = 1920
         self.capture_height: int = 1080
+        self.capture_fourcc: str = "MJPG"
 
         # Keyboard layout
         self.target_layout: str = "us104"
@@ -50,7 +51,7 @@ class Config:
         self.web_host: str = "127.0.0.1"
         self.web_port: int = 9330
         self.web_fps: int = 20
-        self.web_quality: int = 60
+        self.web_quality: int = 85
 
         # Audio (web viewer only; None = disabled)
         self.audio_device: str | None = None
@@ -68,7 +69,7 @@ class Config:
 _FILE_KEYS = {
     "serial_port", "serial_baud",
     "screen_width", "screen_height",
-    "capture_device", "capture_width", "capture_height",
+    "capture_device", "capture_width", "capture_height", "capture_fourcc",
     "target_layout", "host_layout", "layouts_dir",
     "api_enabled", "api_host", "api_port",
     "web_enabled", "web_host", "web_port", "web_fps", "web_quality",
@@ -129,6 +130,7 @@ _ENV_MAP = {
     "SHKVM_CAPTURE_DEVICE": "capture_device",
     "SHKVM_CAPTURE_WIDTH": "capture_width",
     "SHKVM_CAPTURE_HEIGHT": "capture_height",
+    "SHKVM_CAPTURE_FOURCC": "capture_fourcc",
     "SHKVM_TARGET_LAYOUT": "target_layout",
     "SHKVM_HOST_LAYOUT":   "host_layout",
     "SHKVM_LAYOUTS_DIR":   "layouts_dir",
@@ -180,6 +182,7 @@ def _apply_args(config: Config, args):
         "capture_device": "capture_device",
         "capture_width":  "capture_width",
         "capture_height": "capture_height",
+        "capture_fourcc": "capture_fourcc",
         "target_layout":  "target_layout",
         "host_layout":    "host_layout",
         "layouts_dir":    "layouts_dir",

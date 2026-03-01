@@ -15,6 +15,23 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 
+def _fourcc_int_to_str(fourcc_int: int) -> str:
+    """Convert an integer FOURCC code to its 4-character string representation.
+
+    Returns hex notation if any byte is outside printable ASCII range
+    (e.g. DirectShow may return media-type GUIDs instead of FOURCC).
+    """
+    fourcc_int = fourcc_int & 0xFFFFFFFF
+    chars = []
+    for i in range(4):
+        b = (fourcc_int >> (8 * i)) & 0xFF
+        if 0x20 <= b <= 0x7E:
+            chars.append(chr(b))
+        else:
+            return f"0x{fourcc_int:08X}"
+    return "".join(chars)
+
+
 import re
 
 _VIDPID_RE = re.compile(r"VID_([0-9A-Fa-f]{4})&PID_([0-9A-Fa-f]{4})")
@@ -63,8 +80,57 @@ def _is_webcam_name(name: str) -> bool:
     return any(kw in name_lower for kw in _WEBCAM_KEYWORDS)
 
 
-def list_capture_devices() -> list[dict]:
+def _enumerate_formats_linux(device_path: str) -> list[str]:
+    """List supported pixel formats for a V4L2 device using v4l2-ctl."""
+    try:
+        result = subprocess.run(
+            ["v4l2-ctl", "--device", device_path, "--list-formats-ext"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0:
+            return []
+        formats = []
+        for line in result.stdout.splitlines():
+            # Lines like "	[0]: 'MJPG' (Motion-JPEG, compressed)"
+            m = re.match(r"\s*\[\d+]:\s*'(\w+)'", line)
+            if m:
+                formats.append(m.group(1))
+        return formats
+    except FileNotFoundError:
+        logger.debug("v4l2-ctl not found, skipping format enumeration")
+        return []
+    except Exception as e:
+        logger.debug(f"v4l2-ctl failed for {device_path}: {e}")
+        return []
+
+
+def _enumerate_formats_windows(device_index: int) -> list[str]:
+    """Probe common FOURCC codes on a Windows device using OpenCV."""
+    probe_fourccs = ["MJPG", "YUY2", "NV12", "H264"]
+    supported = []
+    try:
+        cap = cv2.VideoCapture(device_index, cv2.CAP_MSMF)
+        if not cap.isOpened():
+            cap = cv2.VideoCapture(device_index, cv2.CAP_DSHOW)
+        if not cap.isOpened():
+            return []
+        for code in probe_fourccs:
+            fourcc_int = cv2.VideoWriter.fourcc(*code)
+            cap.set(cv2.CAP_PROP_FOURCC, fourcc_int)
+            actual = int(cap.get(cv2.CAP_PROP_FOURCC))
+            if _fourcc_int_to_str(actual) == code:
+                supported.append(code)
+        cap.release()
+    except Exception as e:
+        logger.debug(f"Format probe failed for device {device_index}: {e}")
+    return supported
+
+
+def list_capture_devices(enumerate_formats: bool = False) -> list[dict]:
     """List all available video capture devices with OS-level names.
+
+    Args:
+        enumerate_formats: If True, also list supported pixel formats per device.
 
     On Windows, uses PnP device names only (no OpenCV probe) so this works
     even when another process already has a device open.
@@ -94,17 +160,23 @@ def list_capture_devices() -> list[dict]:
                                 break
                     except Exception:
                         pass
-                devices.append({"device": device_path, "name": name, "vidpid": vidpid})
+                entry: dict = {"device": device_path, "name": name, "vidpid": vidpid}
+                if enumerate_formats:
+                    entry["formats"] = _enumerate_formats_linux(device_path)
+                devices.append(entry)
 
     elif system == "Windows":
         # PnP enumeration order matches DirectShow index order
         pnp_devices = _get_windows_video_device_names()
         for idx, pnp in enumerate(pnp_devices):
-            devices.append({
+            entry = {
                 "device": str(idx),
                 "name": pnp["name"],
                 "vidpid": pnp.get("vidpid", ""),
-            })
+            }
+            if enumerate_formats:
+                entry["formats"] = _enumerate_formats_windows(idx)
+            devices.append(entry)
 
     return devices
 
@@ -143,11 +215,17 @@ class ScreenCapture:
     """HDMI capture device controller with background capture thread."""
 
     def __init__(self, device: int | str | None = None, preview: bool = False,
-                 width: int | None = None, height: int | None = None):
+                 width: int | None = None, height: int | None = None,
+                 fourcc: str = "MJPG"):
         self._device = device
         self._cap: cv2.VideoCapture | None = None
         self._req_width = width
         self._req_height = height
+        self._req_fourcc = fourcc.upper()
+
+        # MJPEG passthrough state
+        self._mjpeg_passthrough = False
+        self._latest_jpeg: bytes | None = None
 
         # Capture thread state
         self._thread: threading.Thread | None = None
@@ -166,12 +244,22 @@ class ScreenCapture:
             device = int(device)
 
         if platform.system() == "Windows" and isinstance(device, int):
-            self._cap = cv2.VideoCapture(device, cv2.CAP_DSHOW)
+            # Prefer MSMF (Media Foundation) — handles FOURCC/MJPEG properly.
+            # DirectShow's CAP_PROP_FOURCC set is broken in OpenCV.
+            self._cap = cv2.VideoCapture(device, cv2.CAP_MSMF)
+            if not self._cap.isOpened():
+                logger.info("MSMF backend failed, falling back to DirectShow")
+                self._cap = cv2.VideoCapture(device, cv2.CAP_DSHOW)
         else:
             self._cap = cv2.VideoCapture(device)
 
         if not self._cap.isOpened():
             raise RuntimeError(f"Failed to open capture device: {device}")
+
+        # Set FOURCC, then resolution, then re-read FOURCC
+        # (resolution change can reset FOURCC on some backends)
+        req_fourcc_int = cv2.VideoWriter.fourcc(*self._req_fourcc)
+        self._cap.set(cv2.CAP_PROP_FOURCC, req_fourcc_int)
 
         if self._req_width is not None and self._req_height is not None:
             self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._req_width)
@@ -179,7 +267,39 @@ class ScreenCapture:
 
         actual_w = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         actual_h = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        logger.info(f"Opened capture device: {device} ({actual_w}x{actual_h})")
+        actual_fourcc_int = int(self._cap.get(cv2.CAP_PROP_FOURCC))
+        actual_fourcc = _fourcc_int_to_str(actual_fourcc_int)
+        backend_name = self._cap.getBackendName()
+
+        # MSMF returns Media Foundation subtype IDs (not FOURCC) via
+        # CAP_PROP_FOURCC, so the readback is unreliable on that backend.
+        if actual_fourcc == self._req_fourcc:
+            logger.info(f"FOURCC: {actual_fourcc}")
+        elif backend_name == "MSMF":
+            logger.info(f"FOURCC: requested {self._req_fourcc} "
+                        f"(MSMF reports {actual_fourcc} — normal)")
+        else:
+            logger.warning(f"FOURCC: requested {self._req_fourcc} but got "
+                           f"{actual_fourcc} — backend may not support it")
+
+        # Attempt MJPEG passthrough: set CONVERT_RGB=0 so OpenCV delivers
+        # raw JPEG bytes instead of decoded BGR frames.
+        # MSMF/DSHOW on Windows always decode internally and CONVERT_RGB=0
+        # either breaks the stream (MSMF) or is ignored (DSHOW).
+        # Passthrough works on V4L2 (Linux).
+        self._mjpeg_passthrough = False
+        if self._req_fourcc == "MJPG" and backend_name not in ("MSMF", "DSHOW"):
+            self._cap.set(cv2.CAP_PROP_CONVERT_RGB, 0)
+            ret, test_frame = self._cap.read()
+            if ret and test_frame is not None and test_frame.ndim == 1:
+                self._mjpeg_passthrough = True
+                logger.info("MJPEG passthrough enabled (raw JPEG from device)")
+            else:
+                self._cap.set(cv2.CAP_PROP_CONVERT_RGB, 1)
+                logger.info("MJPEG passthrough not available, using decode path")
+
+        logger.info(f"Opened capture device: {device} ({actual_w}x{actual_h}, "
+                     f"fourcc={actual_fourcc})")
 
     def _ensure_open(self):
         """Open capture device if not already open."""
@@ -221,7 +341,16 @@ class ScreenCapture:
                 time.sleep(0.01)
                 continue
 
-            self._latest_frame = frame.copy()
+            if self._mjpeg_passthrough and frame.ndim == 1:
+                # Raw JPEG bytes from device
+                self._latest_jpeg = frame.tobytes()
+                # Decode for preview window
+                decoded = cv2.imdecode(frame, cv2.IMREAD_COLOR)
+                if decoded is not None:
+                    self._latest_frame = decoded
+            else:
+                self._latest_frame = frame.copy()
+
             time.sleep(0.016)  # ~60fps cap
 
     def get_latest_frame(self) -> np.ndarray | None:
@@ -234,9 +363,19 @@ class ScreenCapture:
     def get_frame_jpeg(self, quality: int = 85) -> tuple[bytes, int, int] | None:
         """Return the latest frame as JPEG bytes with dimensions.
 
+        When MJPEG passthrough is active, returns the raw JPEG from the
+        device without re-encoding (quality parameter is ignored).
+
         Returns:
             (jpeg_bytes, width, height) or None if no frame available.
         """
+        if self._mjpeg_passthrough and self._latest_jpeg is not None:
+            frame = self._latest_frame
+            if frame is None:
+                return None
+            h, w = frame.shape[:2]
+            return (self._latest_jpeg, w, h)
+
         frame = self._latest_frame
         if frame is None:
             return None
@@ -293,11 +432,19 @@ class ScreenCapture:
     def get_info(self) -> dict:
         """Get capture device information."""
         self._ensure_open()
+        fourcc_int = int(self._cap.get(cv2.CAP_PROP_FOURCC))
+        fourcc_str = _fourcc_int_to_str(fourcc_int)
+        backend = self._cap.getBackendName()
+        # MSMF readback is unreliable; show the requested FOURCC instead
+        if backend == "MSMF" and fourcc_str != self._req_fourcc:
+            fourcc_str = self._req_fourcc
         return {
             "device": str(self._device),
             "width": int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
             "height": int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
             "fps": self._cap.get(cv2.CAP_PROP_FPS),
-            "backend": self._cap.getBackendName(),
+            "backend": backend,
+            "fourcc": fourcc_str,
+            "mjpeg_passthrough": self._mjpeg_passthrough,
             "preview": self._running,
         }
