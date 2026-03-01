@@ -289,6 +289,7 @@ class _Win32KeyboardGrab:
         self._thread: threading.Thread | None = None
         self._thread_id: int = 0     # Windows thread ID for PostThreadMessage
         self.quit_requested = False
+        self.fullscreen_toggle_requested = False
         self._quit_keys: set[str] = set()
 
     def start(self):
@@ -440,7 +441,7 @@ class _Win32KeyboardGrab:
         self._hook = None
 
     def _check_quit(self, vk: int, is_up: bool) -> bool:
-        """Track Ctrl+Alt+Q quit combo. Returns True if Q is the quit trigger."""
+        """Track Ctrl+Alt+Q/F11 hotkey combos. Returns True to pass through."""
         if vk in (0xA2, 0xA3):     # VK_LCONTROL / VK_RCONTROL
             if is_up:
                 self._quit_keys.discard("ctrl")
@@ -454,6 +455,10 @@ class _Win32KeyboardGrab:
         elif vk == 0x51 and not is_up:  # VK_Q key-down
             if "ctrl" in self._quit_keys and "alt" in self._quit_keys:
                 self.quit_requested = True
+                return True
+        elif vk == 0x7A and not is_up:  # VK_F11 key-down
+            if "ctrl" in self._quit_keys and "alt" in self._quit_keys:
+                self.fullscreen_toggle_requested = True
                 return True
         return False
 
@@ -545,6 +550,7 @@ class _PynputKeyboardHandler:
         self._pynput_mod_bits = _build_pynput_modifier_bits()
         self._active = True
         self.quit_requested = False
+        self.fullscreen_toggle_requested = False
         self._quit_keys: set[str] = set()
 
     def start(self):
@@ -710,6 +716,11 @@ class _PynputKeyboardHandler:
               and "alt" in self._quit_keys):
             self.quit_requested = True
             return True
+        elif (key == Key.f11
+              and "ctrl" in self._quit_keys
+              and "alt" in self._quit_keys):
+            self.fullscreen_toggle_requested = True
+            return True
         return False
 
     def _check_quit_release(self, key):
@@ -838,10 +849,13 @@ def run_preview_inprocess(hardware, config: Config,
 
     # --- Set up window ---
 
-    window_name = "KVM Preview (Interactive)"
+    window_name = "Serial HID KVM - Ctrl+Alt+Q: Quit | Ctrl+Alt+F11: Fullscreen"
     frame_w = 0
     frame_h = 0
     mouse_buttons = 0
+    is_fullscreen = False
+    display_w = 0
+    display_h = 0
 
     print("KVM Preview Viewer (Interactive)")
 
@@ -856,8 +870,9 @@ def run_preview_inprocess(hardware, config: Config,
 
     if debug_keys:
         print("Key debug: ON (--debug-keys)")
-    print("Ctrl+Alt+End → Ctrl+Alt+Del (sent to target)")
-    print("Ctrl+Alt+Q   → Quit the viewer")
+    print("Ctrl+Alt+End   → Ctrl+Alt+Del (sent to target)")
+    print("Ctrl+Alt+F11   → Toggle fullscreen")
+    print("Ctrl+Alt+Q     → Quit the viewer")
 
     # Pre-load blank cursor for hiding crosshair (target OS draws its own)
     _blank_cursor = None
@@ -878,11 +893,13 @@ def run_preview_inprocess(hardware, config: Config,
         if _blank_cursor is not None:
             import ctypes
             ctypes.windll.user32.SetCursor(_blank_cursor)
-        if frame_w == 0 or frame_h == 0:
+        dw = display_w if display_w > 0 else frame_w
+        dh = display_h if display_h > 0 else frame_h
+        if dw == 0 or dh == 0:
             return
         # Scale window coords to CH9329 absolute coords (0-4095)
-        abs_x = max(0, min(4095, int(x * 4096 / frame_w)))
-        abs_y = max(0, min(4095, int(y * 4096 / frame_h)))
+        abs_x = max(0, min(4095, int(x * 4096 / dw)))
+        abs_y = max(0, min(4095, int(y * 4096 / dh)))
 
         if event == cv2.EVENT_LBUTTONDOWN:
             mouse_buttons |= 0x01
@@ -913,9 +930,10 @@ def run_preview_inprocess(hardware, config: Config,
             except Exception as e:
                 logger.warning(f"Mouse error: {e}")
 
+    # WINDOW_NORMAL allows resize & fullscreen toggle.
     # WINDOW_GUI_NORMAL suppresses Qt toolbar/statusbar/context-menu when
     # OpenCV is built with the Qt backend (common on Linux).
-    cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE | cv2.WINDOW_GUI_NORMAL)
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL | cv2.WINDOW_GUI_NORMAL)
     cv2.setMouseCallback(window_name, mouse_callback)
 
     # Set up keyboard handler based on platform
@@ -937,17 +955,49 @@ def run_preview_inprocess(hardware, config: Config,
         except ImportError:
             pass  # will use OpenCV fallback
 
+    def toggle_fullscreen():
+        nonlocal is_fullscreen, display_w, display_h
+        is_fullscreen = not is_fullscreen
+        if is_fullscreen:
+            cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN,
+                                  cv2.WINDOW_FULLSCREEN)
+        else:
+            cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN,
+                                  cv2.WINDOW_NORMAL)
+            if frame_w > 0 and frame_h > 0:
+                cv2.resizeWindow(window_name, frame_w, frame_h)
+            display_w, display_h = frame_w, frame_h
+
     try:
         while True:
             if kb_handler and kb_handler.quit_requested:
                 break
 
+            # Check fullscreen toggle from keyboard handler
+            if kb_handler and kb_handler.fullscreen_toggle_requested:
+                kb_handler.fullscreen_toggle_requested = False
+                toggle_fullscreen()
+
             frame = capture.get_latest_frame()
             if frame is not None:
                 h, w = frame.shape[:2]
                 if w > 0 and h > 0:
-                    frame_w, frame_h = w, h
+                    if w != frame_w or h != frame_h:
+                        frame_w, frame_h = w, h
+                        if not is_fullscreen:
+                            cv2.resizeWindow(window_name, frame_w, frame_h)
                     cv2.imshow(window_name, frame)
+
+            # Update display dimensions for mouse coordinate mapping
+            if is_fullscreen:
+                try:
+                    rect = cv2.getWindowImageRect(window_name)
+                    if rect[2] > 0 and rect[3] > 0:
+                        display_w, display_h = rect[2], rect[3]
+                except Exception:
+                    display_w, display_h = frame_w, frame_h
+            else:
+                display_w, display_h = frame_w, frame_h
 
             key = cv2.waitKeyEx(16)
 
