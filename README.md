@@ -32,6 +32,7 @@ flowchart LR
 - **Headless mode** — run without preview window; combine with `--api` and/or `--web`
 - **Multi-layout support** — US, JP (JIS), UK, DE, FR keyboards for API text input (some special characters like umlauts, accented characters, and £ are not yet supported in non-US/JP layouts)
 - **Audio streaming** — HDMI audio playback in preview window and web viewer; auto-detected from capture device VID:PID, or specify manually with `--audio-device`
+- **Auto-crop black borders** — automatically detects and crops pillarboxing/letterboxing from HDMI capture when the target resolution doesn't match the capture output (e.g. 1024x768 on a 1080p dongle); mouse coordinates adjust automatically
 - **Auto-detection** — finds CH340 serial adapter, HDMI capture device, and matching audio input automatically
 
 ## Use Cases
@@ -172,6 +173,7 @@ Options:
   --capture-device DEV      Capture device index or path
   --capture-width PX        Capture resolution width (default: 1920)
   --capture-height PX       Capture resolution height (default: 1080)
+  --no-autocrop             Disable automatic black border cropping
 
   --target-layout NAME      Target keyboard layout: us104, jp106, uk105, de105, fr105
   --host-layout NAME        Host keyboard layout (default: auto-detect, 'none' to disable)
@@ -205,6 +207,7 @@ All use the `SHKVM_` prefix:
 | `SHKVM_WEB_FPS` | `20` | Web viewer frame rate |
 | `SHKVM_WEB_QUALITY` | `60` | Web viewer JPEG quality (1-100) |
 | `SHKVM_AUDIO_DEVICE` | auto-detect | Audio input device index or name |
+| `SHKVM_AUTOCROP` | `true` | Auto-crop black borders from capture (`0`/`false` to disable) |
 | `SHKVM_DEBUG_KEYS` | `0` | Enable keycode debug output (`1`/`true`) |
 | `SHKVM_SHOW_CURSOR` | `0` | Show mouse cursor on preview window (`1`/`true`) |
 | `SHKVM_LOG_FILE` | — | Also write logs to a file |
@@ -237,6 +240,7 @@ web_port: 9330
 web_fps: 20
 web_quality: 60
 audio_device: null
+autocrop: true
 debug_keys: false
 show_cursor: false
 ```
@@ -301,6 +305,8 @@ Then open `http://localhost:9330` in a browser. To allow access from other machi
 - Runs alongside the API server and preview window simultaneously
 
 As with the preview window, the mouse cursor is hidden by default. The **Cursor** button in the toolbar shows a local cursor that tracks your mouse instantly, reducing the feeling of input lag caused by video stream latency.
+
+**Auto-crop**: HDMI capture dongles (e.g. MacroSilicon MS213x) always output 1920x1080 internally. When the target PC runs at a non-16:9 resolution (e.g. 1024x768), black bars are added (pillarboxing/letterboxing). Auto-crop detects these black borders and removes them so the preview, web viewer, and API all receive clean frames. Mouse coordinate mapping adjusts automatically since it uses the cropped frame dimensions. Disable with `--no-autocrop` or `SHKVM_AUTOCROP=false` if needed.
 
 **Known limitation**: The web viewer supports up to 6 simultaneous key presses (the HID protocol maximum), but browser-level key event quirks may affect complex multi-key scenarios. For reliable text input, use the API's `type_text` method.
 

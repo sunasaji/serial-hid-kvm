@@ -95,6 +95,7 @@ class KvmHardware:
                 width=self._config.capture_width,
                 height=self._config.capture_height,
                 fourcc=self._config.capture_fourcc,
+                autocrop=self._config.autocrop,
             )
             self._capture.start_capture_thread()
         return self._capture
@@ -451,6 +452,8 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="Capture resolution height (default: 1080)")
     parser.add_argument("--capture-fourcc", type=str, metavar="CODE",
                         help="Capture FOURCC code (default: MJPG)")
+    parser.add_argument("--no-autocrop", action="store_true",
+                        help="Disable automatic black border cropping")
 
     # Audio (for web viewer)
     parser.add_argument("--audio-device", type=str, metavar="DEV",

@@ -56,6 +56,9 @@ class Config:
         # Audio (web viewer only; None = disabled)
         self.audio_device: str | None = None
 
+        # Capture processing
+        self.autocrop: bool = True
+
         # Runtime options
         self.headless: bool = False
         self.debug_keys: bool = False
@@ -74,6 +77,7 @@ _FILE_KEYS = {
     "api_enabled", "api_host", "api_port",
     "web_enabled", "web_host", "web_port", "web_fps", "web_quality",
     "audio_device",
+    "autocrop",
     "debug_keys", "headless", "show_cursor",
 }
 
@@ -143,6 +147,7 @@ _ENV_MAP = {
     "SHKVM_WEB_PORT":      "web_port",
     "SHKVM_WEB_FPS":       "web_fps",
     "SHKVM_WEB_QUALITY":   "web_quality",
+    "SHKVM_AUTOCROP":      "autocrop",
     "SHKVM_DEBUG_KEYS":    "debug_keys",
     "SHKVM_SHOW_CURSOR":   "show_cursor",
 }
@@ -210,6 +215,8 @@ def _apply_args(config: Config, args):
         config.debug_keys = True
     if getattr(args, "show_cursor", False):
         config.show_cursor = True
+    if getattr(args, "no_autocrop", False):
+        config.autocrop = False
 
 
 # ---------------------------------------------------------------------------
