@@ -20,15 +20,13 @@ dependencies = [
     "pynput>=1.7.6",
     "pyyaml>=6.0",
     "websockets>=12.0",
+    "sounddevice>=0.4.6",
 ]
 
 [project.urls]
 Homepage = "https://github.com/sunasaji/serial-hid-kvm"
 Repository = "https://github.com/sunasaji/serial-hid-kvm"
 Issues = "https://github.com/sunasaji/serial-hid-kvm/issues"
-
-[project.optional-dependencies]
-audio = ["sounddevice>=0.4.6"]
 
 [project.scripts]
 serial-hid-kvm = "serial_hid_kvm.server:main"

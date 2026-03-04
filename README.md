@@ -63,9 +63,6 @@ sudo apt install python3-venv
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
-
-# With audio support (for web viewer audio streaming)
-pip install -e ".[audio]"
 ```
 
 On Linux, add your user to the required groups and install dependencies:
@@ -161,8 +158,7 @@ Options:
   --web-quality Q           Web viewer JPEG quality 1-100 (default: 60)
 
   --audio-device DEV        Audio input device index or name
-                            (auto-detected from capture device VID:PID;
-                             requires pip install .[audio])
+                            (auto-detected from capture device VID:PID)
 
   -s, --serial-port PORT    Serial port (e.g. COM3, /dev/ttyUSB0)
   --serial-baud BAUD        Serial baud rate (default: 9600)
@@ -312,10 +308,10 @@ As with the preview window, the mouse cursor is hidden by default. The **Cursor*
 
 ### Audio
 
-HDMI audio can be streamed to both the preview window and the web viewer. If the `audio` extra is installed and the HDMI capture device has a matching audio input (same USB VID:PID), audio is **enabled automatically** — no `--audio-device` flag needed.
+HDMI audio can be streamed to both the preview window and the web viewer. If the HDMI capture device has a matching audio input (same USB VID:PID), audio is **enabled automatically** — no `--audio-device` flag needed.
 
 ```bash
-# Auto-detection: just run with audio extra installed
+# Auto-detection: just run normally
 serial-hid-kvm --headless --web
 
 # Verify which devices are auto-detected
@@ -326,7 +322,7 @@ serial-hid-kvm list-devices
 serial-hid-kvm --headless --web --audio-device 3
 ```
 
-Requires the `audio` extra: `pip install serial-hid-kvm[audio]` (installs `sounddevice`). The preview window plays audio immediately; the web viewer requires clicking the **Unmute** button (browser autoplay policy).
+The preview window plays audio immediately; the web viewer requires clicking the **Unmute** button (browser autoplay policy).
 
 ## API Server
 
