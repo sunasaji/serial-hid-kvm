@@ -26,7 +26,7 @@ flowchart LR
 - **Interactive preview window** — see the target screen in real-time, type and click as if you were sitting in front of it
 - **Full keyboard capture** (Windows) — Win32 low-level hook captures all keys including Win, Alt+Tab when the preview window is focused (Ctrl+Alt+Del via Ctrl+Alt+End)
 - **Web-based remote viewer** — browser-based remote desktop with keyboard/mouse over WebSocket (`--web`)
-- **API server** (`--api`) — JSON Lines protocol over TCP socket for programmatic automation from any language; also available as an MCP server via [mcp-serial-hid-kvm](https://github.com/sunasaji/mcp-serial-hid-kvm)
+- **API server** (`--api`) — JSON Lines protocol over TCP socket for programmatic automation from any language; also available as an MCP server via [mcp-serial-hid-kvm](https://github.com/sunasaji/mcp-serial-hid-kvm) or as a CLI via [cli-serial-hid-kvm](https://github.com/sunasaji/cli-serial-hid-kvm)
 - **Python client library** — thread-safe client with auto-reconnect for scripting and AI agent integration
 - **Multiple concurrent clients** — one KVM server, many API clients (AI agents, scripts, etc.)
 - **Headless mode** — run without preview window; combine with `--api` and/or `--web`
@@ -37,7 +37,7 @@ flowchart LR
 
 ## Use Cases
 
-- **AI-driven PC automation** — let Claude or other AI agents control a PC via [mcp-serial-hid-kvm](https://github.com/sunasaji/mcp-serial-hid-kvm)
+- **AI-driven PC automation** — let Claude or other AI agents control a PC via [mcp-serial-hid-kvm](https://github.com/sunasaji/mcp-serial-hid-kvm) or [cli-serial-hid-kvm](https://github.com/sunasaji/cli-serial-hid-kvm)
 - **Remote KVM over network** — lightweight IP-KVM with commodity hardware
 - **Automated testing** — drive real hardware UI tests via the API
 - **Headless server management** — access BIOS/UEFI setup, OS installers, or machines without network
@@ -326,7 +326,7 @@ The preview window plays audio immediately; the web viewer requires clicking the
 
 ## API Server
 
-JSON Lines protocol over TCP socket. Enable with `--api`. One JSON object per line, newline-delimited. An MCP server wrapper is available at [mcp-serial-hid-kvm](https://github.com/sunasaji/mcp-serial-hid-kvm) for integration with Claude and other AI agents.
+JSON Lines protocol over TCP socket. Enable with `--api`. One JSON object per line, newline-delimited. An MCP server wrapper is available at [mcp-serial-hid-kvm](https://github.com/sunasaji/mcp-serial-hid-kvm), and a CLI client with OCR at [cli-serial-hid-kvm](https://github.com/sunasaji/cli-serial-hid-kvm), for integration with Claude and other AI agents.
 
 ### Request / Response
 
