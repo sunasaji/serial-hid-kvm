@@ -116,10 +116,13 @@ class KvmClient:
     def ping(self) -> dict:
         return self.call("ping")
 
-    def type_text(self, text: str, char_delay_ms: int | None = None) -> dict:
+    def type_text(self, text: str, char_delay_ms: int | None = None,
+                  raw: bool = False) -> dict:
         params: dict = {"text": text}
         if char_delay_ms is not None:
             params["char_delay_ms"] = char_delay_ms
+        if raw:
+            params["raw"] = True
         return self.call("type_text", params)
 
     def send_key(self, key: str, modifiers: list[str] | None = None) -> dict:

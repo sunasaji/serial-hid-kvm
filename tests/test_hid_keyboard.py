@@ -60,3 +60,53 @@ class TestTokenize:
         tokens = Keyboard._tokenize("path{0x87}file{enter}")
         expected = list("path") + ["\x010x87"] + list("file") + ["\x01enter"]
         assert tokens == expected
+
+    def test_unknown_tag_passes_through(self):
+        """Unknown {content} is treated as literal text (whitelist-based)."""
+        tokens = Keyboard._tokenize("{print $1}")
+        assert tokens == list("{print $1}")
+
+    def test_awk_command(self):
+        """awk code with braces passes through literally, {enter} is a tag."""
+        tokens = Keyboard._tokenize("awk '{print $1}' file.txt{enter}")
+        expected = list("awk '{print $1}' file.txt") + ["\x01enter"]
+        assert tokens == expected
+
+    def test_python_dict_literal(self):
+        """Python-style dict braces pass through literally."""
+        tokens = Keyboard._tokenize('{"key": "value"}')
+        assert tokens == list('{"key": "value"}')
+
+    def test_escaped_recognized_tag(self):
+        """Escaped braces around a recognized tag produce literal text."""
+        tokens = Keyboard._tokenize("{{enter}}")
+        assert tokens == ["{"] + list("enter") + ["}"]
+
+
+class TestIsValidTag:
+    """Tests for _is_valid_tag."""
+
+    def test_recognized_special_keys(self):
+        assert Keyboard._is_valid_tag("enter") is True
+        assert Keyboard._is_valid_tag("tab") is True
+        assert Keyboard._is_valid_tag("escape") is True
+        assert Keyboard._is_valid_tag("f1") is True
+        assert Keyboard._is_valid_tag("backspace") is True
+
+    def test_hex_keycodes(self):
+        assert Keyboard._is_valid_tag("0x87") is True
+        assert Keyboard._is_valid_tag("0x2C") is True
+
+    def test_modifier_combos(self):
+        assert Keyboard._is_valid_tag("ctrl+c") is True
+        assert Keyboard._is_valid_tag("shift+0x87") is True
+        assert Keyboard._is_valid_tag("ctrl+alt+delete") is True
+
+    def test_unknown_content(self):
+        assert Keyboard._is_valid_tag("print $1") is False
+        assert Keyboard._is_valid_tag("unknown") is False
+        assert Keyboard._is_valid_tag("key: value") is False
+
+    def test_single_char_key(self):
+        assert Keyboard._is_valid_tag("a") is True
+        assert Keyboard._is_valid_tag("ctrl+a") is True

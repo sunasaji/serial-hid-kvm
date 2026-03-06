@@ -342,7 +342,7 @@ JSON Lines protocol over TCP socket. Enable with `--api`. One JSON object per li
 
 | Method | Parameters | Description |
 |--------|-----------|-------------|
-| `type_text` | `text`, `char_delay_ms?` | Type text with `{tag}` support |
+| `type_text` | `text`, `char_delay_ms?`, `raw?` | Type text with `{tag}` support (whitelist-based) |
 | `send_key` | `key`, `modifiers?` | Single key press (e.g., `enter`, `f5`) |
 | `send_key_sequence` | `steps`, `default_delay_ms?` | Multiple key steps with delays |
 | `mouse_move` | `x`, `y`, `relative?` | Move mouse cursor (preserves button state during drag) |
@@ -367,7 +367,21 @@ ls -la{enter}             # type command and press Enter
 {alt+f4}                  # Alt+F4
 Hello{{World}}            # literal braces: Hello{World}
 path{0x87}file            # raw HID keycode (0x87 = JIS backslash)
+awk '{print $1}' f{enter} # {print $1} is not a known tag, passes through literally
 ```
+
+**Whitelist-based**: Only recognized special key names inside `{braces}` are interpreted as tags (e.g. `{enter}`, `{ctrl+c}`, `{0x87}`). Unknown `{content}` (e.g. `{print $1}`) is passed through as literal text including the braces, so awk/Python/shell code can be sent without escaping in most cases.
+
+**Escaping**: Use `{{` and `}}` to force literal braces when they collide with a recognized tag name (e.g. `{{enter}}` to type the literal text `{enter}`).
+
+### Raw Mode
+
+Set `raw` to `true` in the `type_text` params to disable all tag interpretation. Newline characters (`\n`) are sent as Enter key presses. Use `\\n` to type a literal backslash + n.
+
+```json
+{"method": "type_text", "params": {"text": "echo hello\necho world\n", "raw": true}}
+```
+→ `echo hello` Enter `echo world` Enter
 
 ### Quick Test
 

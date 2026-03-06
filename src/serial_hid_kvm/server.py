@@ -146,7 +146,8 @@ class ApiDispatcher:
         text = params["text"]
         delay_ms = params.get("char_delay_ms")
         delay = delay_ms / 1000.0 if delay_ms is not None else None
-        self._hw.get_keyboard().type_text(text, char_delay=delay)
+        raw = params.get("raw", False)
+        self._hw.get_keyboard().type_text(text, char_delay=delay, raw=raw)
         result: dict = {"chars_typed": len(text)}
         if self._config.debug_keys:
             result["hid_trace"] = self._trace_text(text)

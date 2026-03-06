@@ -2,14 +2,10 @@
 
 import atexit
 import logging
-import re
 import time
 
 from .hid_keycodes import char_to_hid, special_key_to_hid, modifier_name_to_bit
 from .hid_protocol import CH9329
-
-# Regex to split text into plain segments and {tag} tokens
-_TAG_RE = re.compile(r"\{([^}]+)\}")
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +25,8 @@ class Keyboard:
         except Exception:
             pass
 
-    def type_text(self, text: str, char_delay: float | None = None):
+    def type_text(self, text: str, char_delay: float | None = None,
+                  raw: bool = False):
         """Type a string with optional inline key tags.
 
         Plain characters are sent as HID key presses. Special keys and raw
@@ -40,18 +37,48 @@ class Keyboard:
         - With modifiers: ``{shift+0x87}``, ``{ctrl+alt+delete}``, ...
         - Literal brace: ``{{`` produces ``{``, ``}}`` produces ``}``
 
+        **Whitelist-based tag parsing:** Only recognized special key names
+        inside {braces} are interpreted as tags. Unknown ``{content}``
+        (e.g. ``{print $1}``) is passed through as literal text including
+        the braces. This means code with curly braces (awk, Python, shell)
+        can be sent without escaping in most cases.
+
+        **Raw mode (raw=True):** Disables all tag interpretation. Newline
+        characters (``\\n``) in the string are sent as Enter key presses.
+        Use literal ``\\n`` (escaped as ``\\\\n`` in JSON) to type a
+        backslash + n.
+
         Examples::
 
             type_text("ls -la{enter}")
             type_text("path{0x87}file")          # 0x87 = international1
             type_text("{ctrl+c}")
             type_text("hello{{world}}")           # types hello{world}
+            type_text("awk '{print $1}'{enter}")  # {print $1} passes through literally
+            type_text("echo hello\\necho world\\n", raw=True)  # raw mode
 
         Args:
             text: Text to type, with optional ``{tag}`` sequences.
             char_delay: Delay between keystrokes (seconds). Uses default if None.
+            raw: If True, disable all tag interpretation. Newlines become Enter.
         """
         delay = char_delay if char_delay is not None else self._char_delay
+
+        if raw:
+            segments = text.split('\n')
+            for idx, segment in enumerate(segments):
+                for ch in segment:
+                    mapping = char_to_hid(ch)
+                    if mapping is None:
+                        logger.warning(f"No HID mapping for character: {ch!r}, skipping")
+                        continue
+                    modifier, keycode = mapping
+                    self._dev.send_keyboard(modifier, keycode)
+                    if delay > 0:
+                        time.sleep(delay)
+                if idx < len(segments) - 1:
+                    self._send_tag("enter", delay)
+            return
 
         for token in self._tokenize(text):
             if token.startswith("\x01"):
@@ -69,10 +96,38 @@ class Keyboard:
                     time.sleep(delay)
 
     @staticmethod
+    def _is_valid_tag(tag: str) -> bool:
+        """Check if a tag string represents a valid special key (with optional modifiers).
+
+        Args:
+            tag: Tag content, e.g. 'enter', 'ctrl+c', 'shift+0x87'
+
+        Returns:
+            True if tag is a recognized key combination
+        """
+        parts = [p.strip() for p in tag.split("+")]
+        key_part = parts[-1]
+        mod_parts = parts[:-1]
+
+        # All prefixes must be valid modifiers
+        for mod_name in mod_parts:
+            if modifier_name_to_bit(mod_name) is None:
+                return False
+
+        # Key part must be a recognized special key, hex keycode, or single char
+        if special_key_to_hid(key_part) is not None:
+            return True
+        if len(key_part) == 1:
+            return True
+        return False
+
+    @staticmethod
     def _tokenize(text: str) -> list[str]:
         """Parse text into a list of single-char strings and tag tokens.
 
         Tags are ``{name}`` sequences and are returned prefixed with ``\\x01``.
+        Only recognized special key names are treated as tags; unknown
+        ``{content}`` is passed through as literal braces + content.
         Escaped braces ``{{`` / ``}}`` become literal ``{`` / ``}``.
         """
         tokens: list[str] = []
@@ -94,8 +149,13 @@ class Keyboard:
                     i += 1
                 else:
                     tag_content = text[i + 1:end]
-                    tokens.append("\x01" + tag_content)
-                    i = end + 1
+                    if tag_content and Keyboard._is_valid_tag(tag_content):
+                        tokens.append("\x01" + tag_content)
+                        i = end + 1
+                    else:
+                        # Not a recognized tag — emit literal { and continue
+                        tokens.append("{")
+                        i += 1
             elif ch == "}":
                 if i + 1 < n and text[i + 1] == "}":
                     # Escaped }} -> literal }
