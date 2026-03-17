@@ -856,6 +856,8 @@ def run_preview_inprocess(hardware, config: Config,
     is_fullscreen = False
     display_w = 0
     display_h = 0
+    fs_screen_w = 0  # Fullscreen monitor resolution (cached on toggle)
+    fs_screen_h = 0
 
     print("Serial HID KVM (Interactive)")
 
@@ -886,6 +888,37 @@ def run_preview_inprocess(hardware, config: Config,
                 None, 0, 0, 1, 1, and_mask, xor_mask)
         except Exception:
             pass
+
+    def _get_monitor_size(wnd_name: str) -> tuple[int, int]:
+        """Get the monitor resolution for the window (Windows only)."""
+        if not _IS_WINDOWS:
+            return 0, 0
+        try:
+            import ctypes
+            from ctypes import wintypes
+            hwnd = ctypes.windll.user32.FindWindowW(None, wnd_name)
+            if not hwnd:
+                return 0, 0
+            hmon = ctypes.windll.user32.MonitorFromWindow(hwnd, 2)  # MONITOR_DEFAULTTONEAREST
+
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", wintypes.DWORD),
+                    ("rcMonitor", wintypes.RECT),
+                    ("rcWork", wintypes.RECT),
+                    ("dwFlags", wintypes.DWORD),
+                ]
+
+            mi = MONITORINFO()
+            mi.cbSize = ctypes.sizeof(MONITORINFO)
+            if ctypes.windll.user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+                w = mi.rcMonitor.right - mi.rcMonitor.left
+                h = mi.rcMonitor.bottom - mi.rcMonitor.top
+                if w > 0 and h > 0:
+                    return w, h
+        except Exception:
+            pass
+        return 0, 0
 
     def mouse_callback(event, x, y, flags, _):
         nonlocal mouse_buttons
@@ -957,11 +990,15 @@ def run_preview_inprocess(hardware, config: Config,
 
     def toggle_fullscreen():
         nonlocal is_fullscreen, display_w, display_h
+        nonlocal fs_screen_w, fs_screen_h
         is_fullscreen = not is_fullscreen
         if is_fullscreen:
+            sw, sh = _get_monitor_size(window_name)
+            fs_screen_w, fs_screen_h = sw, sh
             cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN,
                                   cv2.WINDOW_FULLSCREEN)
         else:
+            fs_screen_w, fs_screen_h = 0, 0
             cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN,
                                   cv2.WINDOW_NORMAL)
             if frame_w > 0 and frame_h > 0:
@@ -986,7 +1023,16 @@ def run_preview_inprocess(hardware, config: Config,
                         frame_w, frame_h = w, h
                         if not is_fullscreen:
                             cv2.resizeWindow(window_name, frame_w, frame_h)
-                    cv2.imshow(window_name, frame)
+                    if is_fullscreen and fs_screen_w > 0 and fs_screen_h > 0:
+                        # Scale frame to fill the monitor so OpenCV reports
+                        # mouse coordinates in physical-pixel space.
+                        show = cv2.resize(frame, (fs_screen_w, fs_screen_h),
+                                          interpolation=cv2.INTER_LINEAR)
+                        cv2.imshow(window_name, show)
+                        display_w, display_h = fs_screen_w, fs_screen_h
+                    else:
+                        cv2.imshow(window_name, frame)
+                        display_w, display_h = frame_w, frame_h
 
             # Update display dimensions for mouse coordinate mapping
             if is_fullscreen:
