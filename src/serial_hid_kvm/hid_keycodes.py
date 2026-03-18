@@ -222,3 +222,27 @@ def modifier_name_to_bit(name: str) -> int | None:
     Returns None if name is unknown.
     """
     return MODIFIER_MAP.get(name.lower())
+
+
+# Characters that can potentially be typed via HID (any layout).
+# ASCII printable (0x20-0x7E) plus tab and line endings.
+_TYPABLE_CHARS = set(chr(c) for c in range(0x20, 0x7F)) | {"\t", "\n", "\r"}
+
+
+def validate_chars(text: str) -> None:
+    """Raise ValueError if text contains characters that cannot be typed via HID.
+
+    This is a pre-flight check usable on the client side before sending to the
+    KVM server.  It validates against the set of characters that any keyboard
+    layout can produce (ASCII printable + tab + line endings).  The server
+    performs its own check against the active layout, which may be stricter or
+    broader, but this catches obviously unsupported characters (Unicode,
+    control chars) early.
+    """
+    for ch in text:
+        if ch not in _TYPABLE_CHARS:
+            raise ValueError(
+                f"Unsupported character: {ch!r} (U+{ord(ch):04X}). "
+                "Only ASCII printable characters are supported. "
+                "For unsupported characters or binary data, use base64 encoding."
+            )

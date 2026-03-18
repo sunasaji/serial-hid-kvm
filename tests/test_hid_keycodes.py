@@ -1,22 +1,11 @@
 """Tests for HID keycode mappings and lookup functions."""
 
 import pytest
-
-from serial_hid_kvm.hid_keycodes import (
-    char_to_hid,
-    special_key_to_hid,
-    modifier_name_to_bit,
-    set_layout,
-    build_char_map,
-    MOD_NONE,
-    MOD_LSHIFT,
-    MOD_LCTRL,
-    MOD_LALT,
-    MOD_LWIN,
-    MOD_RCTRL,
-    MOD_RSHIFT,
-    MOD_RALT,
-)
+from serial_hid_kvm.hid_keycodes import (MOD_LALT, MOD_LCTRL, MOD_LSHIFT,
+                                         MOD_LWIN, MOD_NONE, MOD_RALT,
+                                         MOD_RCTRL, MOD_RSHIFT, build_char_map,
+                                         char_to_hid, modifier_name_to_bit,
+                                         special_key_to_hid, validate_chars)
 
 
 class TestCharToHid:
@@ -128,6 +117,46 @@ class TestModifierNameToBit:
 
     def test_unknown(self):
         assert modifier_name_to_bit("unknown") is None
+
+
+class TestValidateChars:
+    """Tests for validate_chars."""
+
+    def test_ascii_printable_passes(self):
+        validate_chars("Hello, World! 123 @#$%")
+
+    def test_tab_and_newline_pass(self):
+        validate_chars("line1\nline2\n")
+        validate_chars("col1\tcol2")
+
+    def test_crlf_passes(self):
+        validate_chars("line1\r\nline2\r\n")
+
+    def test_cr_only_passes(self):
+        validate_chars("line1\rline2\r")
+
+    def test_empty_string_passes(self):
+        validate_chars("")
+
+    def test_unicode_raises(self):
+        with pytest.raises(ValueError, match="Unsupported character.*U\\+3053"):
+            validate_chars("こんにちは")
+
+    def test_control_char_raises(self):
+        with pytest.raises(ValueError, match="Unsupported character.*U\\+0000"):
+            validate_chars("\x00")
+
+    def test_accented_char_raises(self):
+        with pytest.raises(ValueError, match="Unsupported character.*U\\+00E9"):
+            validate_chars("café")
+
+    def test_emoji_raises(self):
+        with pytest.raises(ValueError, match="Unsupported character"):
+            validate_chars("hello 😀")
+
+    def test_mixed_valid_invalid_raises_on_first(self):
+        with pytest.raises(ValueError, match="U\\+00FC"):
+            validate_chars("hello über world")
 
 
 class TestLayoutMapping:

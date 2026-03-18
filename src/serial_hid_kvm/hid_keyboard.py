@@ -1,13 +1,11 @@
 """Keyboard control via CH9329 HID emulator."""
 
 import atexit
-import logging
+import re
 import time
 
-from .hid_keycodes import char_to_hid, special_key_to_hid, modifier_name_to_bit
+from .hid_keycodes import char_to_hid, modifier_name_to_bit, special_key_to_hid
 from .hid_protocol import CH9329
-
-logger = logging.getLogger(__name__)
 
 
 class Keyboard:
@@ -43,10 +41,10 @@ class Keyboard:
         the braces. This means code with curly braces (awk, Python, shell)
         can be sent without escaping in most cases.
 
-        **Raw mode (raw=True):** Disables all tag interpretation. Newline
-        characters (``\\n``) in the string are sent as Enter key presses.
-        Use literal ``\\n`` (escaped as ``\\\\n`` in JSON) to type a
-        backslash + n.
+        **Raw mode (raw=True):** Disables all tag interpretation. Actual
+        line breaks in the input (LF, CRLF, CR) are sent as Enter key
+        presses. Backslash sequences (e.g. the two characters ``\\`` ``n``)
+        are not interpreted and are typed literally.
 
         Examples::
 
@@ -60,18 +58,23 @@ class Keyboard:
         Args:
             text: Text to type, with optional ``{tag}`` sequences.
             char_delay: Delay between keystrokes (seconds). Uses default if None.
-            raw: If True, disable all tag interpretation. Newlines become Enter.
+            raw: If True, disable all tag interpretation. Line endings
+                (LF, CRLF, CR) become Enter.
         """
         delay = char_delay if char_delay is not None else self._char_delay
 
         if raw:
-            segments = text.split('\n')
+            # Handle all line ending conventions: CRLF, CR, LF
+            segments = re.split(r'\r\n|\r|\n', text)
             for idx, segment in enumerate(segments):
                 for ch in segment:
                     mapping = char_to_hid(ch)
                     if mapping is None:
-                        logger.warning(f"No HID mapping for character: {ch!r}, skipping")
-                        continue
+                        raise ValueError(
+                            f"Unsupported character: {ch!r} (U+{ord(ch):04X}). "
+                            "Only ASCII printable characters are supported. "
+                            "For unsupported characters or binary data, use base64 encoding."
+                        )
                     modifier, keycode = mapping
                     self._dev.send_keyboard(modifier, keycode)
                     if delay > 0:
@@ -88,8 +91,11 @@ class Keyboard:
                 # Plain character
                 mapping = char_to_hid(token)
                 if mapping is None:
-                    logger.warning(f"No HID mapping for character: {token!r}, skipping")
-                    continue
+                    raise ValueError(
+                        f"Unsupported character: {token!r} (U+{ord(token):04X}). "
+                        "Only ASCII printable characters are supported. "
+                        "For unsupported characters or binary data, use base64 encoding."
+                    )
                 modifier, keycode = mapping
                 self._dev.send_keyboard(modifier, keycode)
                 if delay > 0:

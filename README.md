@@ -342,9 +342,9 @@ JSON Lines protocol over TCP socket. Enable with `--api`. One JSON object per li
 
 | Method | Parameters | Description |
 |--------|-----------|-------------|
-| `type_text` | `text`, `char_delay_ms?`, `raw?` | Type text with `{tag}` support (whitelist-based) |
+| `type_text` | `text`, `char_delay_ms?`, `raw?` | Type text with `{tag}` support (whitelist-based). `char_delay_ms`: delay between each keystroke in ms (default: 20) |
 | `send_key` | `key`, `modifiers?` | Single key press (e.g., `enter`, `f5`) |
-| `send_key_sequence` | `steps`, `default_delay_ms?` | Multiple key steps with delays |
+| `send_key_sequence` | `steps`, `default_delay_ms?` | Multiple key steps with delays. `default_delay_ms`: delay between steps in ms (default: 100). Each step can override with `delay_ms` |
 | `mouse_move` | `x`, `y`, `relative?` | Move mouse cursor (preserves button state during drag) |
 | `mouse_click` | `button?`, `x?`, `y?` | Click at position |
 | `mouse_down` | `button?`, `x?`, `y?` | Press and hold button (for drag start) |
@@ -372,16 +372,30 @@ awk '{print $1}' f{enter} # {print $1} is not a known tag, passes through litera
 
 **Whitelist-based**: Only recognized special key names inside `{braces}` are interpreted as tags (e.g. `{enter}`, `{ctrl+c}`, `{0x87}`). Unknown `{content}` (e.g. `{print $1}`) is passed through as literal text including the braces, so awk/Python/shell code can be sent without escaping in most cases.
 
+**Hex keycodes**: `{0xNN}` sends any HID keycode by its hex value (0x00–0xFF). This is useful for keys that have no named tag, such as JIS-specific keys: `{0x87}` (International1 / `ろ`), `{0x89}` (International3 / `¥`). Modifiers can be combined: `{shift+0x87}`.
+
 **Escaping**: Use `{{` and `}}` to force literal braces when they collide with a recognized tag name (e.g. `{{enter}}` to type the literal text `{enter}`).
 
 ### Raw Mode
 
-Set `raw` to `true` in the `type_text` params to disable all tag interpretation. Newline characters (`\n`) are sent as Enter key presses. Use `\\n` to type a literal backslash + n.
+Set `raw` to `true` in the `type_text` params to disable all tag interpretation. Actual line breaks in the input (LF, CRLF, CR) are sent as Enter key presses. Backslash sequences in the text (e.g. the two characters `\` `n`) are not interpreted and are typed literally.
+
+In JSON, `\n` is decoded by the JSON parser into an actual line break (0x0A), so it becomes Enter. To type a literal backslash + n, use `\\n` in JSON (which decodes to the two characters `\` `n`).
 
 ```json
 {"method": "type_text", "params": {"text": "echo hello\necho world\n", "raw": true}}
 ```
 → `echo hello` Enter `echo world` Enter
+
+### Supported Characters
+
+`type_text` supports ASCII printable characters (space through `~`), tab, and newline. Characters outside this set — Unicode, CJK, accented characters, control characters, etc. — cause an error. If the target PC uses a non-US keyboard layout, set `--target-layout` (e.g. `jp106`, `uk105`) on the server.
+
+**Base64 workaround** for unsupported characters or binary data — encode on the sending side, decode on the target:
+
+```json
+{"method": "type_text", "params": {"text": "echo 44GT44KT44Gr44Gh44GvCg== | base64 -d{enter}"}}
+```
 
 ### Quick Test
 
