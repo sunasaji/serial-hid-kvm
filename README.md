@@ -370,6 +370,23 @@ path{0x87}file            # raw HID keycode (0x87 = JIS backslash)
 awk '{print $1}' f{enter} # {print $1} is not a known tag, passes through literally
 ```
 
+**Supported tags:**
+
+| Category | Tags |
+|---|---|
+| Enter / Space | `enter`, `return`, `space` |
+| Navigation | `up`, `down`, `left`, `right`, `home`, `end`, `pageup`, `pagedown` |
+| Editing | `backspace`, `delete`, `insert`, `tab` |
+| Escape / Cancel | `escape`, `esc` |
+| Function keys | `f1` – `f12` |
+| Lock keys | `capslock`, `numlock`, `scrolllock` |
+| System | `printscreen`, `pause` |
+| Modifiers | `ctrl`, `shift`, `alt`, `win`, `gui`, `super`, `meta` |
+| Left/right modifiers | `lctrl`, `rctrl`, `lshift`, `rshift`, `lalt`, `ralt`, `lwin`, `rwin` |
+| Raw HID keycode | `0x00` – `0xFF` |
+
+Modifiers are combined with `+`: `{ctrl+c}`, `{ctrl+shift+del}`, `{shift+0x87}`. Multiple modifiers can be chained.
+
 **Whitelist-based**: Only recognized special key names inside `{braces}` are interpreted as tags (e.g. `{enter}`, `{ctrl+c}`, `{0x87}`). Unknown `{content}` (e.g. `{print $1}`) is passed through as literal text including the braces, so awk/Python/shell code can be sent without escaping in most cases.
 
 **Hex keycodes**: `{0xNN}` sends any HID keycode by its hex value (0x00–0xFF). This is useful for keys that have no named tag, such as JIS-specific keys: `{0x87}` (International1 / `ろ`), `{0x89}` (International3 / `¥`). Modifiers can be combined: `{shift+0x87}`.
