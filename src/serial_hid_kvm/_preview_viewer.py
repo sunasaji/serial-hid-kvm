@@ -825,6 +825,7 @@ def run_preview_inprocess(hardware, config: Config,
 
     ch9329 = hardware.get_ch9329()
     capture = hardware.get_capture()
+    capture.start_capture_thread()
 
     screen_w = config.screen_width
     screen_h = config.screen_height

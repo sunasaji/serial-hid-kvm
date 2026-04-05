@@ -635,6 +635,13 @@ class WebViewerServer:
         ua_short = ua[:120] + "…" if len(ua) > 120 else ua
         logger.info(f"Web client connected from {ip} ({len(self._clients)} total)"
                      + (f"  UA: {ua_short}" if ua_short else ""))
+
+        # Start capture thread on first client connection
+        if len(self._clients) == 1:
+            capture = self._hw.get_capture()
+            capture.start_capture_thread()
+            logger.info("Capture thread started (first web client)")
+
         audio_queue = None
         try:
             # Notify client about audio availability
@@ -667,6 +674,13 @@ class WebViewerServer:
                 self._audio.unsubscribe(audio_queue)
             self._clients.discard(ws)
             logger.info(f"Web client disconnected from {ip} ({len(self._clients)} total)")
+
+            # Stop capture thread when last client disconnects
+            if len(self._clients) == 0:
+                capture = self._hw.get_capture()
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, capture.stop_capture_thread)
+                logger.info("Capture thread stopped (no web clients)")
 
     async def _send_frames(self, ws):
         """Stream JPEG frames to the client at configured FPS."""

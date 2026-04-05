@@ -97,7 +97,6 @@ class KvmHardware:
                 fourcc=self._config.capture_fourcc,
                 autocrop=self._config.autocrop,
             )
-            self._capture.start_capture_thread()
         return self._capture
 
     def close(self):
