@@ -47,7 +47,7 @@ def build_keyboard_packet(modifier: int, keycode: int) -> bytes:
     return build_packet(CMD_KEYBOARD, data)
 
 
-def build_keyboard_report(modifier: int, keycodes: list[int] | set[int] = ()) -> bytes:
+def build_keyboard_report(modifier: int, keycodes: list[int] | set[int] = ()) -> bytes:  # type: ignore[assignment]
     """Build a keyboard HID report with multiple simultaneous keys.
 
     Args:
@@ -147,8 +147,8 @@ class CH9329:
         with self._send_lock:
             if not self.is_open:
                 self.open()
-            self._serial.write(packet)
-            self._serial.flush()
+            self._serial.write(packet)  # type: ignore[union-attr]
+            self._serial.flush()  # type: ignore[union-attr]
 
     def send_keyboard(self, modifier: int, keycode: int, release_delay: float = 0.01):
         """Send a key press and release."""

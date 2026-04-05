@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import importlib.resources
 import logging
-import os
 from pathlib import Path
 
 import yaml
@@ -80,7 +79,7 @@ def _load_yaml(filepath: str | Path) -> dict[str, tuple[int, int]]:
 def _builtin_layouts_dir() -> Path:
     """Return the path to the built-in layouts/ directory inside the package."""
     # importlib.resources.files() returns a Traversable (Python 3.9+)
-    return Path(str(importlib.resources.files(__package__) / "layouts"))
+    return Path(str(importlib.resources.files(__package__ or __name__) / "layouts"))
 
 
 # ---------------------------------------------------------------------------

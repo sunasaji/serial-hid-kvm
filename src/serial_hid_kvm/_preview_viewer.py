@@ -21,12 +21,11 @@ import time
 from typing import Callable
 
 import cv2
-import numpy as np
 
 from .config import Config
-from .hid_keycodes import char_to_hid, set_layout, MOD_LCTRL, MOD_LSHIFT, MOD_LALT, MOD_LWIN
+from .hid_keycodes import char_to_hid, MOD_LCTRL, MOD_LSHIFT, MOD_LALT, MOD_LWIN
 from .hid_protocol import (
-    build_keyboard_packet, build_keyboard_release_packet,
+    build_keyboard_packet,
     build_mouse_abs_packet, build_mouse_rel_packet,
 )
 
@@ -231,7 +230,7 @@ class _FocusDetector:
 
     def _has_focus_windows(self) -> bool:
         import ctypes
-        user32 = ctypes.windll.user32
+        user32 = ctypes.windll.user32  # type: ignore[attr-defined]
         fg = user32.GetForegroundWindow()
         if fg == 0:
             return False
@@ -269,11 +268,11 @@ class _Win32KeyboardGrab:
 
     # Windows constants
     _WH_KEYBOARD_LL = 13
-    _WM_KEYDOWN    = 0x0100
-    _WM_KEYUP      = 0x0101
+    _WM_KEYDOWN = 0x0100
+    _WM_KEYUP = 0x0101
     _WM_SYSKEYDOWN = 0x0104
-    _WM_SYSKEYUP   = 0x0105
-    _WM_QUIT       = 0x0012
+    _WM_SYSKEYUP = 0x0105
+    _WM_QUIT = 0x0012
     _LLKHF_EXTENDED = 0x01
     _LLKHF_INJECTED = 0x10
 
@@ -305,17 +304,17 @@ class _Win32KeyboardGrab:
     def stop(self):
         if self._thread_id:
             import ctypes
-            ctypes.windll.user32.PostThreadMessageW(
+            ctypes.windll.user32.PostThreadMessageW(  # type: ignore[attr-defined]
                 self._thread_id, self._WM_QUIT, 0, 0)
         if self._thread:
             self._thread.join(timeout=2)
 
     def _run(self):
         import ctypes
-        from ctypes import wintypes, POINTER, WINFUNCTYPE, cast, byref
+        from ctypes import wintypes, POINTER, WINFUNCTYPE, cast, byref  # type: ignore[attr-defined]
 
-        user32 = ctypes.windll.user32
-        kernel32 = ctypes.windll.kernel32
+        user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
 
         self._thread_id = kernel32.GetCurrentThreadId()
 
@@ -329,10 +328,10 @@ class _Win32KeyboardGrab:
 
         class KBDLLHOOKSTRUCT(ctypes.Structure):
             _fields_ = [
-                ("vkCode",      wintypes.DWORD),
-                ("scanCode",    wintypes.DWORD),
-                ("flags",       wintypes.DWORD),
-                ("time",        wintypes.DWORD),
+                ("vkCode", wintypes.DWORD),
+                ("scanCode", wintypes.DWORD),
+                ("flags", wintypes.DWORD),
+                ("time", wintypes.DWORD),
                 ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
             ]
 
@@ -408,7 +407,7 @@ class _Win32KeyboardGrab:
             if hid == 0x4D and has_ctrl and has_alt:  # End → Delete
                 hid = 0x4C
                 if self._debug:
-                    print(f"[HOOK] Ctrl+Alt+End → Ctrl+Alt+Delete")
+                    print("[HOOK] Ctrl+Alt+End → Ctrl+Alt+Delete")
 
             if not is_up:
                 try:
@@ -598,7 +597,7 @@ class _PynputKeyboardHandler:
             if hid == 0x4D and has_ctrl and has_alt:
                 hid = 0x4C
                 if self._debug:
-                    print(f"[KEY] Ctrl+Alt+End → Ctrl+Alt+Delete")
+                    print("[KEY] Ctrl+Alt+End → Ctrl+Alt+Delete")
             try:
                 if hid in _MODIFIER_HID_KEYCODES:
                     self._on_key_down(self._held_modifiers, 0)
@@ -712,13 +711,13 @@ class _PynputKeyboardHandler:
         elif key in (Key.alt_l, Key.alt_r):
             self._quit_keys.add("alt")
         elif (getattr(key, 'char', None) == 'q'
-              and "ctrl" in self._quit_keys
-              and "alt" in self._quit_keys):
+              and "ctrl" in self._quit_keys  # noqa: W503
+              and "alt" in self._quit_keys):  # noqa: W503
             self.quit_requested = True
             return True
         elif (key == Key.f11
-              and "ctrl" in self._quit_keys
-              and "alt" in self._quit_keys):
+              and "ctrl" in self._quit_keys  # noqa: W503
+              and "alt" in self._quit_keys):  # noqa: W503
             self.fullscreen_toggle_requested = True
             return True
         return False
@@ -765,19 +764,38 @@ class _PynputKeyboardHandler:
 def _build_cv2_special_key_map() -> dict[int, int]:
     m: dict[int, int] = {}
     if _IS_LINUX:
-        m[0xFF08] = 0x2A; m[0xFF09] = 0x2B; m[0xFF0D] = 0x28; m[0xFF1B] = 0x29
-        m[0xFF50] = 0x4A; m[0xFF51] = 0x50; m[0xFF52] = 0x52; m[0xFF53] = 0x4F
-        m[0xFF54] = 0x51; m[0xFF55] = 0x4B; m[0xFF56] = 0x4E; m[0xFF57] = 0x4D
-        m[0xFF63] = 0x49; m[0xFFFF] = 0x4C
+        m[0xFF08] = 0x2A
+        m[0xFF09] = 0x2B
+        m[0xFF0D] = 0x28
+        m[0xFF1B] = 0x29
+        m[0xFF50] = 0x4A
+        m[0xFF51] = 0x50
+        m[0xFF52] = 0x52
+        m[0xFF53] = 0x4F
+        m[0xFF54] = 0x51
+        m[0xFF55] = 0x4B
+        m[0xFF56] = 0x4E
+        m[0xFF57] = 0x4D
+        m[0xFF63] = 0x49
+        m[0xFFFF] = 0x4C
         for i in range(12):
             m[0xFFBE + i] = 0x3A + i
     else:
-        m[0x250000] = 0x50; m[0x260000] = 0x52; m[0x270000] = 0x4F; m[0x280000] = 0x51
-        m[0x240000] = 0x4A; m[0x230000] = 0x4D; m[0x210000] = 0x4B; m[0x220000] = 0x4E
-        m[0x2D0000] = 0x49; m[0x2E0000] = 0x4C
+        m[0x250000] = 0x50
+        m[0x260000] = 0x52
+        m[0x270000] = 0x4F
+        m[0x280000] = 0x51
+        m[0x240000] = 0x4A
+        m[0x230000] = 0x4D
+        m[0x210000] = 0x4B
+        m[0x220000] = 0x4E
+        m[0x2D0000] = 0x49
+        m[0x2E0000] = 0x4C
         for i in range(12):
             m[(0x70 + i) << 16] = 0x3A + i
-    m.setdefault(8, 0x2A); m.setdefault(9, 0x2B); m.setdefault(13, 0x28)
+    m.setdefault(8, 0x2A)
+    m.setdefault(9, 0x2B)
+    m.setdefault(13, 0x28)
     return m
 
 
@@ -826,9 +844,6 @@ def run_preview_inprocess(hardware, config: Config,
     ch9329 = hardware.get_ch9329()
     capture = hardware.get_capture()
     capture.start_capture_thread()
-
-    screen_w = config.screen_width
-    screen_h = config.screen_height
 
     # --- Build callback functions that talk directly to CH9329 ---
 
@@ -885,7 +900,7 @@ def run_preview_inprocess(hardware, config: Config,
             # Create 1x1 transparent cursor
             and_mask = (ctypes.c_ubyte * 1)(0xFF)
             xor_mask = (ctypes.c_ubyte * 1)(0x00)
-            _blank_cursor = ctypes.windll.user32.CreateCursor(
+            _blank_cursor = ctypes.windll.user32.CreateCursor(  # type: ignore[attr-defined]
                 None, 0, 0, 1, 1, and_mask, xor_mask)
         except Exception:
             pass
@@ -897,10 +912,10 @@ def run_preview_inprocess(hardware, config: Config,
         try:
             import ctypes
             from ctypes import wintypes
-            hwnd = ctypes.windll.user32.FindWindowW(None, wnd_name)
+            hwnd = ctypes.windll.user32.FindWindowW(None, wnd_name)  # type: ignore[attr-defined]
             if not hwnd:
                 return 0, 0
-            hmon = ctypes.windll.user32.MonitorFromWindow(hwnd, 2)  # MONITOR_DEFAULTTONEAREST
+            hmon = ctypes.windll.user32.MonitorFromWindow(hwnd, 2)  # type: ignore[attr-defined]  # MONITOR_DEFAULTTONEAREST
 
             class MONITORINFO(ctypes.Structure):
                 _fields_ = [
@@ -912,7 +927,7 @@ def run_preview_inprocess(hardware, config: Config,
 
             mi = MONITORINFO()
             mi.cbSize = ctypes.sizeof(MONITORINFO)
-            if ctypes.windll.user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+            if ctypes.windll.user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):  # type: ignore[attr-defined]
                 w = mi.rcMonitor.right - mi.rcMonitor.left
                 h = mi.rcMonitor.bottom - mi.rcMonitor.top
                 if w > 0 and h > 0:
@@ -926,7 +941,7 @@ def run_preview_inprocess(hardware, config: Config,
         # Hide cursor on every mouse event (OpenCV resets it)
         if _blank_cursor is not None:
             import ctypes
-            ctypes.windll.user32.SetCursor(_blank_cursor)
+            ctypes.windll.user32.SetCursor(_blank_cursor)  # type: ignore[attr-defined]
         dw = display_w if display_w > 0 else frame_w
         dh = display_h if display_h > 0 else frame_h
         if dw == 0 or dh == 0:
@@ -980,7 +995,7 @@ def run_preview_inprocess(hardware, config: Config,
         kb_handler.start()
     else:
         try:
-            import pynput  # noqa: F401
+            import pynput  # noqa: F401, F811
             kb_handler = _PynputKeyboardHandler(on_key, on_key_down, focus,
                                                 debug=debug_keys,
                                                 host_char_map=host_char_map,

@@ -95,6 +95,8 @@ class KvmClient:
                 try:
                     if self._sock is None:
                         self._connect_unlocked()
+                    assert self._sock is not None
+                    assert self._rfile is not None
                     self._sock.sendall(payload.encode("utf-8"))
                     line = self._rfile.readline()
                     if not line:
@@ -110,6 +112,7 @@ class KvmClient:
                         time.sleep(0.5)
                         continue
                     raise KvmClientError(f"Failed to communicate with KVM server: {e}")
+        raise KvmClientError("Failed to communicate with KVM server")
 
     # -- convenience methods -------------------------------------------------
 

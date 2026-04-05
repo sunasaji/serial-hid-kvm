@@ -348,7 +348,7 @@ class TcpServer:
             self._server = None
 
     async def _handle_client(self, reader: asyncio.StreamReader,
-                              writer: asyncio.StreamWriter):
+                             writer: asyncio.StreamWriter):
         self._client_count += 1
         peer = writer.get_extra_info("peername")
         cid = self._client_count
@@ -612,7 +612,7 @@ def _audio_vidpid_lookup() -> dict[str, str]:
                     if vp:
                         pnp_map.append((d.get("Name", ""), vp))
                 # Match sounddevice names against PnP names by substring
-                import sounddevice as sd
+                import sounddevice as sd  # type: ignore[import-untyped]
                 for dev in sd.query_devices():
                     name = dev["name"]
                     for pnp_name, vp in pnp_map:
@@ -694,7 +694,7 @@ def _cmd_list_devices():
 
     print("\nAudio input devices:")
     try:
-        import sounddevice as sd
+        import sounddevice as sd  # type: ignore[import-untyped]
         devs = sd.query_devices()
         # Prefer WASAPI on Windows (matches OS sound settings),
         # fall back to default host API on other platforms.
@@ -747,7 +747,7 @@ def _auto_detect_audio(config):
     shares the same VID:PID, automatically select it.
     """
     try:
-        import sounddevice as sd
+        import sounddevice as sd  # type: ignore[import-untyped]
     except ImportError:
         return
 

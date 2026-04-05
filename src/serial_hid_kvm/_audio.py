@@ -15,7 +15,7 @@ class AudioCapture:
     """Capture PCM audio from an input device and broadcast to subscribers."""
 
     def __init__(self, device):
-        import sounddevice as sd
+        import sounddevice as sd  # type: ignore[import-untyped]
         dev_value = int(device) if device.isdigit() else device
         info = sd.query_devices(dev_value, kind="input")
         self.samplerate = int(info["default_samplerate"])
@@ -27,7 +27,7 @@ class AudioCapture:
         self._stream = None
 
     def start(self):
-        import sounddevice as sd
+        import sounddevice as sd  # type: ignore[import-untyped]
         self._stream = sd.InputStream(
             device=self._device,
             samplerate=self.samplerate,
@@ -80,7 +80,7 @@ class AudioPlayback:
         self._stream = None
 
     def start(self):
-        import sounddevice as sd
+        import sounddevice as sd  # type: ignore[import-untyped]
         self._queue = self._capture.subscribe()
         self._stream = sd.OutputStream(
             samplerate=self._capture.samplerate,

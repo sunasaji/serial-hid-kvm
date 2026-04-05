@@ -3,6 +3,7 @@
 import json
 import logging
 import platform
+import re
 import subprocess
 import threading
 import time
@@ -48,8 +49,8 @@ def _detect_crop_rect(frame: np.ndarray) -> tuple[int, int, int, int] | None:
     left = x1
     right = w - x2
 
-    if (top < _AUTOCROP_MIN_BORDER and bottom < _AUTOCROP_MIN_BORDER
-            and left < _AUTOCROP_MIN_BORDER and right < _AUTOCROP_MIN_BORDER):
+    if (top < _AUTOCROP_MIN_BORDER and bottom < _AUTOCROP_MIN_BORDER  # noqa: W503
+            and left < _AUTOCROP_MIN_BORDER and right < _AUTOCROP_MIN_BORDER):  # noqa: W503
         return None
 
     return (y1, y2, x1, x2)
@@ -71,8 +72,6 @@ def _fourcc_int_to_str(fourcc_int: int) -> str:
             return f"0x{fourcc_int:08X}"
     return "".join(chars)
 
-
-import re
 
 _VIDPID_RE = re.compile(r"VID_([0-9A-Fa-f]{4})&PID_([0-9A-Fa-f]{4})")
 
@@ -343,8 +342,9 @@ class ScreenCapture:
                 self._cap.set(cv2.CAP_PROP_CONVERT_RGB, 1)
                 logger.info("MJPEG passthrough not available, using decode path")
 
-        logger.info(f"Opened capture device: {device} ({actual_w}x{actual_h}, "
-                     f"fourcc={actual_fourcc})")
+        logger.info(
+            f"Opened capture device: {device} ({actual_w}x{actual_h}, "
+            f"fourcc={actual_fourcc})")
 
     def _ensure_open(self):
         """Open capture device if not already open."""
@@ -469,6 +469,7 @@ class ScreenCapture:
             frame = self._latest_frame.copy()
         else:
             self._ensure_open()
+            assert self._cap is not None
             with self._lock:
                 ret, frame = self._cap.read()
             if not ret or frame is None:
@@ -506,6 +507,7 @@ class ScreenCapture:
     def get_info(self) -> dict:
         """Get capture device information."""
         self._ensure_open()
+        assert self._cap is not None
         fourcc_int = int(self._cap.get(cv2.CAP_PROP_FOURCC))
         fourcc_str = _fourcc_int_to_str(fourcc_int)
         backend = self._cap.getBackendName()

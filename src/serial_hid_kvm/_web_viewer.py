@@ -19,8 +19,6 @@ from websockets.http11 import Response
 
 from ._audio import AudioCapture
 from .hid_protocol import (
-    build_keyboard_packet,
-    build_keyboard_release_packet,
     build_keyboard_report,
     build_mouse_abs_packet,
     build_mouse_rel_packet,
@@ -106,10 +104,10 @@ _JS_CODE_TO_HID: dict[str, int] = {
 
 # Modifier codes → bitmask
 _JS_MOD_BITS: dict[str, int] = {
-    "ShiftLeft": 0x02,    "ShiftRight": 0x20,
-    "ControlLeft": 0x01,  "ControlRight": 0x10,
-    "AltLeft": 0x04,      "AltRight": 0x40,
-    "MetaLeft": 0x08,     "MetaRight": 0x80,
+    "ShiftLeft": 0x02, "ShiftRight": 0x20,
+    "ControlLeft": 0x01, "ControlRight": 0x10,
+    "AltLeft": 0x04, "AltRight": 0x40,
+    "MetaLeft": 0x08, "MetaRight": 0x80,
 }
 
 
@@ -633,8 +631,10 @@ class WebViewerServer:
         ip = f"{addr[0]}:{addr[1]}" if addr else "unknown"
         ua = getattr(ws, "_kvm_user_agent", "")
         ua_short = ua[:120] + "…" if len(ua) > 120 else ua
-        logger.info(f"Web client connected from {ip} ({len(self._clients)} total)"
-                     + (f"  UA: {ua_short}" if ua_short else ""))
+        msg = f"Web client connected from {ip} ({len(self._clients)} total)"
+        if ua_short:
+            msg += f"  UA: {ua_short}"
+        logger.info(msg)
 
         # Start capture thread on first client connection
         if len(self._clients) == 1:
