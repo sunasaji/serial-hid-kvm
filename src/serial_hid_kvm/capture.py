@@ -294,6 +294,12 @@ class ScreenCapture:
             if not self._cap.isOpened():
                 logger.info("MSMF backend failed, falling back to DirectShow")
                 self._cap = cv2.VideoCapture(device, cv2.CAP_DSHOW)
+        elif platform.system() == "Linux":
+            self._cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
+            if not self._cap.isOpened():
+                self._cap.release()
+                logger.warning("V4L2 failed, falling back to automatic backend selection")
+                self._cap = cv2.VideoCapture(device)
         else:
             self._cap = cv2.VideoCapture(device)
 
