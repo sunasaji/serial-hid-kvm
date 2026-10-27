@@ -419,9 +419,16 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-file", type=str, metavar="PATH",
                         help="Also write logs to file (in addition to stderr)")
     parser.add_argument("--debug-keys", action="store_true",
-                        help="Print keycode debug output to console")
+                        help="Show keycode, viewer input, and outgoing HID packet debug output")
     parser.add_argument("--show-cursor", action="store_true",
                         help="Show crosshair cursor on preview window")
+    parser.add_argument("--mouse-button-mode", choices=("absolute", "relative"),
+                        help="Viewer button reports (default: absolute); use relative "
+                             "for targets that ignore buttons in absolute reports")
+    parser.add_argument("--preview-keyboard", choices=("auto", "opencv", "pynput"),
+                        help="Preview keyboard backend (default: auto); auto preserves "
+                             "Win32/pynput selection but falls back to opencv on Linux "
+                             "without xdotool; opencv uses window-local events")
 
     # API server (JSON Lines over TCP socket)
     parser.add_argument("--api", action="store_true",
@@ -813,6 +820,9 @@ def main():
 
     # Load config: CLI > env > file > defaults
     config = load_config(args)
+    if config.debug_keys:
+        for module in ("hid_protocol", "_preview_viewer", "_web_viewer"):
+            logging.getLogger(f"serial_hid_kvm.{module}").setLevel(logging.DEBUG)
 
     # Apply keyboard layout
     source = set_layout(config.target_layout, layouts_dir=config.layouts_dir)

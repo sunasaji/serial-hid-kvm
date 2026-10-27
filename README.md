@@ -72,7 +72,7 @@ sudo usermod -a -G dialout $USER  # Serial port access
 sudo usermod -a -G video $USER    # Video capture access
 # Log out and back in for group changes to take effect
 
-sudo apt install xdotool  # Required for preview window focus detection
+sudo apt install xdotool  # Required for pynput preview focus detection (X11/Xwayland)
 ```
 
 ## Quick Start
@@ -143,8 +143,10 @@ Commands:
 Options:
   --headless                Run without preview window
   --log-file PATH           Also write logs to a file (in addition to stderr)
-  --debug-keys              Print keycode debug output to console
+  --debug-keys              Show keycode, viewer input, and outgoing HID packet debug output
   --show-cursor             Show mouse cursor on preview window
+  --mouse-button-mode MODE  Viewer button reports: absolute (default) or relative
+  --preview-keyboard MODE   Preview keyboard: auto (default), opencv, or pynput
   -c, --config FILE         Path to YAML config file
 
   --api                     Enable API server (JSON Lines over TCP socket)
@@ -193,6 +195,8 @@ All use the `SHKVM_` prefix:
 | `SHKVM_CAPTURE_HEIGHT` | `1080` | Capture resolution height |
 | `SHKVM_TARGET_LAYOUT` | `us104` | Target keyboard layout for API and preview |
 | `SHKVM_HOST_LAYOUT` | `auto` | Host keyboard layout (`auto`, layout name, or `none`) |
+| `SHKVM_MOUSE_BUTTON_MODE` | `absolute` | Viewer button reports (`absolute` or `relative`) |
+| `SHKVM_PREVIEW_KEYBOARD` | `auto` | Preview keyboard backend (`auto`, `opencv`, or `pynput`) |
 | `SHKVM_LAYOUTS_DIR` | — | Directory for custom layout YAML files |
 | `SHKVM_API` | `false` | Enable API server (`1`/`true`) |
 | `SHKVM_API_HOST` | `127.0.0.1` | API server bind address |
@@ -227,6 +231,8 @@ screen_height: 1080
 capture_device: /dev/video0
 target_layout: jp106
 host_layout: auto
+mouse_button_mode: absolute
+preview_keyboard: auto
 api_enabled: false
 api_host: 127.0.0.1
 api_port: 9329
@@ -252,27 +258,33 @@ The interactive preview window shows the target screen in real-time with full ke
 - **Ctrl+Alt+End**: Send Ctrl+Alt+Del to target (like RDP/VNC)
 - **Ctrl+Alt+Q**: Quit the preview (and the server)
 
-On Windows, a low-level keyboard hook captures all keys (including Win key). On Linux, pynput is used (keys are not suppressed on the host). The mouse cursor is hidden by default because the target OS cursor is visible in the captured video. However, the video has inherent latency so the cursor in the video lags behind your actual mouse position. `--show-cursor` shows a local cursor that tracks your mouse instantly, reducing the feeling of input lag during precise operations.
+By default, Windows uses a low-level keyboard hook (including Win key), and other platforms use pynput (keys are not suppressed on the host). Use `--preview-keyboard opencv` for window-local input when pynput or X11 focus detection does not work. This mode has limited modifier support. The mouse cursor is hidden by default because the target OS cursor is visible in the captured video. However, the video has inherent latency so the cursor in the video lags behind your actual mouse position. `--show-cursor` shows a local cursor that tracks your mouse instantly, reducing the feeling of input lag during precise operations.
 
 ### Keyboard Handling
 
 On **Windows**, the preview window captures physical scan codes and converts them directly to HID keycodes. Keyboard input works correctly without layout configuration.
 
-On **Linux**, pynput delivers characters rather than scan codes. When the host and target keyboard layouts differ, characters must be reverse-mapped to the correct physical HID keycodes. This is handled automatically:
+On **Linux/X11 or Xwayland with xdotool**, pynput delivers characters rather than scan codes. When the host and target keyboard layouts differ, characters must be reverse-mapped to the correct physical HID keycodes. This is handled automatically:
 
 1. **Detection**: `--host-layout auto` (default) detects the host layout via `gsettings` (GNOME compositor) and `setxkbmap` (X11/Xwayland)
 2. **Reverse lookup**: When host and target layouts differ, the preview builds a character→keycode map for the host layout. Incoming characters are looked up in the host map to recover the physical key position, then sent as HID keycodes
 3. **Keycode sending**: The physical keycode is sent to the target with the currently held modifier bits
 
-**Wayland hybrid mode**: On GNOME Wayland, pynput runs through Xwayland, which may have a different keymap from the compositor. For example, the compositor may be set to JP while Xwayland defaults to US. When this mismatch is detected:
-- **Unshifted characters** match the compositor (display) layout → mapped via `char_to_hid` using the target layout
-- **Shifted characters** match the Xwayland layout → reverse-looked up via the host character map
+`--preview-keyboard auto` uses Win32 on Windows and pynput elsewhere, with an OpenCV fallback if pynput cannot be imported or `xdotool` is missing on Linux.
 
-Use `--debug-keys` to see which path each key takes. Debug output labels:
-- `WAYLAND-REVERSE`: Shifted character reverse-looked up via Xwayland host layout (Wayland hybrid)
+If keyboard forwarding still fails, try `--preview-keyboard opencv`. Modifier combinations and layout-specific keys are limited in this mode, and Escape closes the preview. Use `--preview-keyboard pynput` to select pynput explicitly.
+
+**Wayland hybrid mapping**: When the pynput backend is used on GNOME Wayland, the compositor and Xwayland may have different keymaps. If this mismatch is detected, shifted characters are reverse-looked up via the Xwayland host map, while unshifted characters use the target character map.
+
+Use `--debug-keys` to see which path each key takes. Pynput debug output labels:
+- `WAYLAND-REVERSE`: Shifted character reverse-looked up via Xwayland host layout
 - `HOST REVERSE`: Character reverse-looked up via host layout (pure X11)
 - `CHAR`: Character mapped via `char_to_hid` using the target layout (fallback)
 - `CHAR UNMAPPED`: Character not found in any layout map
+
+`--debug-keys` also logs viewer input and outgoing HID packets. Add `--log-file /tmp/serial-hid-kvm.log` to record them; these logs include keyboard input.
+
+If mouse movement works but clicks do not, try `--mouse-button-mode relative` in either viewer. Pointer movement remains absolute.
 
 **Known limitation — layout-specific physical keys (e.g. JIS ろ/¥)**: Some keyboards have physical keys that don't exist on other layouts. For example, JIS keyboards have ろ (International1, HID 0x87) and ¥ (International3, HID 0x89), which produce `\`/`_` and `¥`/`|` respectively. On Xwayland with a US keymap, these keys are mapped to the same characters as standard US keys (`_` = Shift+`-`, `|` = Shift+`\`), making them indistinguishable at the character level. The preview window sends the standard key position in these cases. **The web viewer handles all keys correctly** because it uses `event.code` (W3C physical key positions) which is layout-independent.
 

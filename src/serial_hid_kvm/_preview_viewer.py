@@ -10,11 +10,14 @@ only reach the remote target.  Scan codes are translated to HID keycodes
 directly, which is layout-independent and correct for KVM pass-through.
 
 On Linux, pynput is used (without host-side suppression).
-Falls back to OpenCV waitKeyEx when neither is available.
+OpenCV waitKeyEx window events can be selected explicitly for Wayland or
+systems without xdotool, and are used as a fallback if pynput is unavailable.
+Auto mode also uses OpenCV on Linux when xdotool is missing from PATH.
 """
 
 import logging
 import platform
+import shutil
 import subprocess
 import threading
 import time
@@ -33,6 +36,24 @@ logger = logging.getLogger(__name__)
 
 _IS_WINDOWS = platform.system() == "Windows"
 _IS_LINUX = platform.system() == "Linux"
+
+
+def _keyboard_backend(mode: str) -> str:
+    """Preserve existing auto selection, including working Xwayland setups."""
+    # pynput can receive Xwayland application events, but not native Wayland
+    # events. A Wayland session alone does not mean pynput is unusable:
+    # https://pynput.readthedocs.io/en/latest/limitations.html
+    if mode == "auto":
+        if _IS_WINDOWS:
+            return "win32"
+        if _IS_LINUX and shutil.which("xdotool") is None:
+            logger.warning(
+                "xdotool not found; using OpenCV window-local keyboard input. "
+                "Install xdotool to enable pynput focus detection."
+            )
+            return "opencv"
+        return "pynput"
+    return mode
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +228,8 @@ class _FocusDetector:
                     "xdotool is not installed. Window focus detection is "
                     "disabled — keyboard input will NOT be forwarded to the "
                     "target while the preview window is open. "
-                    "Install it with: sudo apt install xdotool"
+                    "Install it with: sudo apt install xdotool, or use "
+                    "--preview-keyboard opencv for window-local keyboard input."
                 )
             except Exception:
                 pass
@@ -840,6 +862,8 @@ def run_preview_inprocess(hardware, config: Config,
             lookup.
     """
     debug_keys = config.debug_keys
+    keyboard_backend = _keyboard_backend(config.preview_keyboard)
+    relative_buttons = config.mouse_button_mode == "relative"
 
     ch9329 = hardware.get_ch9329()
     capture = hardware.get_capture()
@@ -857,11 +881,16 @@ def run_preview_inprocess(hardware, config: Config,
 
     def on_mouse(buttons: int, abs_x: int, abs_y: int):
         """Absolute mouse position."""
-        ch9329.send(build_mouse_abs_packet(buttons, abs_x, abs_y))
+        # One-KVM #266 documents Linux targets that ignore absolute buttons.
+        # Its compatibility mode uses relative buttons and button-free abs moves:
+        # https://github.com/mofeng-git/One-KVM/issues/266
+        report_buttons = 0 if relative_buttons else buttons
+        ch9329.send(build_mouse_abs_packet(report_buttons, abs_x, abs_y))
 
     def on_scroll(amount: int):
         """Scroll wheel."""
-        ch9329.send(build_mouse_rel_packet(0, 0, 0, scroll=amount))
+        buttons = mouse_buttons if relative_buttons else 0
+        ch9329.send(build_mouse_rel_packet(buttons, 0, 0, scroll=amount))
 
     # --- Set up window ---
 
@@ -877,13 +906,23 @@ def run_preview_inprocess(hardware, config: Config,
 
     print("Serial HID KVM (Interactive)")
 
-    if _IS_WINDOWS:
+    logger.info("Viewer mouse button mode: %s", config.mouse_button_mode)
+    if keyboard_backend == "win32":
         print("Keyboard: Win32 low-level hook (all keys captured when focused)")
+    elif keyboard_backend == "opencv":
+        logger.info(
+            "Keyboard: OpenCV window events. "
+            "Modifier support is limited; use the web viewer for full keyboard input."
+        )
     else:
         try:
             import pynput  # noqa: F401
             print("Keyboard: pynput (host keys NOT suppressed)")
         except ImportError:
+            if config.preview_keyboard == "pynput":
+                raise RuntimeError(
+                    "Requested pynput keyboard backend is unavailable"
+                ) from None
             print("Keyboard: OpenCV fallback (install pynput for modifier support)")
 
     if debug_keys:
@@ -938,6 +977,7 @@ def run_preview_inprocess(hardware, config: Config,
 
     def mouse_callback(event, x, y, flags, _):
         nonlocal mouse_buttons
+        previous_buttons = mouse_buttons
         # Hide cursor on every mouse event (OpenCV resets it)
         if _blank_cursor is not None:
             import ctypes
@@ -976,6 +1016,11 @@ def run_preview_inprocess(hardware, config: Config,
                      cv2.EVENT_MBUTTONDOWN, cv2.EVENT_MBUTTONUP):
             try:
                 on_mouse(mouse_buttons, abs_x, abs_y)
+                if mouse_buttons != previous_buttons:
+                    logger.debug("Preview mouse event=%s buttons=0x%02X x=%d y=%d",
+                                 event, mouse_buttons, abs_x, abs_y)
+                    if relative_buttons:
+                        ch9329.send(build_mouse_rel_packet(mouse_buttons, 0, 0))
             except Exception as e:
                 logger.warning(f"Mouse error: {e}")
 
@@ -986,23 +1031,28 @@ def run_preview_inprocess(hardware, config: Config,
     cv2.setMouseCallback(window_name, mouse_callback)
 
     # Set up keyboard handler based on platform
-    focus = _FocusDetector(window_name)
     kb_handler = None
 
-    if _IS_WINDOWS:
+    if keyboard_backend == "win32":
+        focus = _FocusDetector(window_name)
         kb_handler = _Win32KeyboardGrab(on_key, on_key_down, focus,
                                         debug=debug_keys)
         kb_handler.start()
-    else:
+    elif keyboard_backend == "pynput":
         try:
             import pynput  # noqa: F401, F811
+            focus = _FocusDetector(window_name)
             kb_handler = _PynputKeyboardHandler(on_key, on_key_down, focus,
                                                 debug=debug_keys,
                                                 host_char_map=host_char_map,
                                                 wayland_hybrid=wayland_hybrid)
             kb_handler.start()
         except ImportError:
-            pass  # will use OpenCV fallback
+            if config.preview_keyboard == "pynput":
+                raise RuntimeError(
+                    "Requested pynput keyboard backend is unavailable"
+                ) from None
+            # Auto mode falls back to OpenCV when pynput cannot be imported.
 
     def toggle_fullscreen():
         nonlocal is_fullscreen, display_w, display_h
@@ -1069,6 +1119,7 @@ def run_preview_inprocess(hardware, config: Config,
                     break
                 if key != -1:
                     result = _cv2_key_to_hid(key, host_char_map=host_char_map)
+                    logger.debug("Preview OpenCV key=0x%X mapping=%s", key, result)
                     if result is not None:
                         modifier, keycode = result
                         try:

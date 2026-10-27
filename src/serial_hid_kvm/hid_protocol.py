@@ -149,6 +149,7 @@ class CH9329:
                 self.open()
             self._serial.write(packet)  # type: ignore[union-attr]
             self._serial.flush()  # type: ignore[union-attr]
+            logger.debug("CH9329 TX: %s", packet.hex(" "))
 
     def send_keyboard(self, modifier: int, keycode: int, release_delay: float = 0.01):
         """Send a key press and release."""

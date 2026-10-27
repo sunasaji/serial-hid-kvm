@@ -726,6 +726,8 @@ class WebViewerServer:
         """Receive and process input events from the client."""
         held_modifiers = 0
         held_keys: set[int] = set()  # currently pressed non-modifier HID keycodes
+        mouse_buttons = 0
+        relative_buttons = self._config.mouse_button_mode == "relative"
         ch9329 = self._hw.get_ch9329()
         loop = asyncio.get_running_loop()
 
@@ -738,6 +740,8 @@ class WebViewerServer:
                 continue
 
             ev_type = ev.get("type")
+            if ev_type != "mousemove":
+                logger.debug("Web input: %s", ev)
 
             if ev_type == "keydown":
                 code = ev.get("code", "")
@@ -770,34 +774,30 @@ class WebViewerServer:
                 pkt = build_keyboard_report(held_modifiers, held_keys)
                 await loop.run_in_executor(None, ch9329.send, pkt)
 
-            elif ev_type == "mousemove":
+            elif ev_type in ("mousemove", "mousedown", "mouseup"):
                 x = ev.get("x", 0)
                 y = ev.get("y", 0)
                 buttons = ev.get("buttons", 0)
-                pkt = build_mouse_abs_packet(buttons, x, y)
+                mouse_buttons = buttons
+                # Opt-in Linux compatibility; keep the default absolute path.
+                # https://github.com/mofeng-git/One-KVM/issues/266
+                pkt = build_mouse_abs_packet(0 if relative_buttons else buttons, x, y)
                 await loop.run_in_executor(None, ch9329.send, pkt)
 
-            elif ev_type == "mousedown":
-                x = ev.get("x", 0)
-                y = ev.get("y", 0)
-                buttons = ev.get("buttons", 0)
-                pkt = build_mouse_abs_packet(buttons, x, y)
-                await loop.run_in_executor(None, ch9329.send, pkt)
-
-            elif ev_type == "mouseup":
-                x = ev.get("x", 0)
-                y = ev.get("y", 0)
-                buttons = ev.get("buttons", 0)
-                pkt = build_mouse_abs_packet(buttons, x, y)
-                await loop.run_in_executor(None, ch9329.send, pkt)
+                if relative_buttons and ev_type != "mousemove":
+                    await loop.run_in_executor(
+                        None, ch9329.send, build_mouse_rel_packet(buttons, 0, 0)
+                    )
 
             elif ev_type == "scroll":
                 dy = ev.get("deltaY", 0)
                 scroll = max(-127, min(127, int(dy)))
-                pkt = build_mouse_rel_packet(0, 0, 0, scroll=scroll)
+                buttons = mouse_buttons if relative_buttons else 0
+                pkt = build_mouse_rel_packet(buttons, 0, 0, scroll=scroll)
                 await loop.run_in_executor(None, ch9329.send, pkt)
 
             elif ev_type == "release_all":
                 await loop.run_in_executor(None, ch9329.release_all)
                 held_modifiers = 0
                 held_keys.clear()
+                mouse_buttons = 0
