@@ -282,7 +282,7 @@ Use `--debug-keys` to see which path each key takes. Pynput debug output labels:
 - `CHAR`: Character mapped via `char_to_hid` using the target layout (fallback)
 - `CHAR UNMAPPED`: Character not found in any layout map
 
-`--debug-keys` also logs viewer input and outgoing HID packets. Add `--log-file /tmp/serial-hid-kvm.log` to record them; these logs include keyboard input.
+`--debug-keys` also logs viewer input and outgoing HID packets. Add `--log-file ~/serial-hid-kvm.log` to record them. These logs include all keyboard input sent to the target, including input sent via the API (e.g. passwords), so review or redact them before sharing, for example in an issue.
 
 If mouse movement works but clicks do not, try `--mouse-button-mode relative` in either viewer. Pointer movement remains absolute.
 
