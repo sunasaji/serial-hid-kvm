@@ -41,6 +41,10 @@ class Config:
         self.host_layout: str = "auto"
         self.layouts_dir: str | None = None
 
+        # Viewer input compatibility (does not change the TCP API).
+        self.mouse_button_mode: str = "absolute"
+        self.preview_keyboard: str = "auto"
+
         # API server (JSON Lines over TCP socket)
         self.api_enabled: bool = False
         self.api_host: str = "127.0.0.1"
@@ -74,6 +78,7 @@ _FILE_KEYS = {
     "screen_width", "screen_height",
     "capture_device", "capture_width", "capture_height", "capture_fourcc",
     "target_layout", "host_layout", "layouts_dir",
+    "mouse_button_mode", "preview_keyboard",
     "api_enabled", "api_host", "api_port",
     "web_enabled", "web_host", "web_port", "web_fps", "web_quality",
     "audio_device",
@@ -138,6 +143,8 @@ _ENV_MAP = {
     "SHKVM_TARGET_LAYOUT": "target_layout",
     "SHKVM_HOST_LAYOUT": "host_layout",
     "SHKVM_LAYOUTS_DIR": "layouts_dir",
+    "SHKVM_MOUSE_BUTTON_MODE": "mouse_button_mode",
+    "SHKVM_PREVIEW_KEYBOARD": "preview_keyboard",
     "SHKVM_API": "api_enabled",
     "SHKVM_API_HOST": "api_host",
     "SHKVM_API_PORT": "api_port",
@@ -191,6 +198,8 @@ def _apply_args(config: Config, args):
         "target_layout": "target_layout",
         "host_layout": "host_layout",
         "layouts_dir": "layouts_dir",
+        "mouse_button_mode": "mouse_button_mode",
+        "preview_keyboard": "preview_keyboard",
         "api_host": "api_host",
         "api_port": "api_port",
         "audio_device": "audio_device",
@@ -265,5 +274,14 @@ def load_config(args=None) -> Config:
     # 3. Override with CLI args
     if args:
         _apply_args(config, args)
+
+    for attr, choices in (
+        ("mouse_button_mode", ("absolute", "relative")),
+        ("preview_keyboard", ("auto", "opencv", "pynput")),
+    ):
+        if getattr(config, attr) not in choices:
+            raise ValueError(
+                f"Invalid {attr}: {getattr(config, attr)!r}; expected one of {choices}"
+            )
 
     return config
